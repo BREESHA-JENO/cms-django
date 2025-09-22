@@ -1,62 +1,87 @@
-from rest_framework import generics, status
+# receptionist_api_app/views.py
+from rest_framework import generics, viewsets, mixins, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from .models import Patient
-from .serializers import PatientSerializer
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
 
-class PatientListCreateView(generics.ListCreateAPIView):
-    queryset = Patient.objects.filter(is_active=True)
-    serializer_class = PatientSerializer
+from .models import Patient, Appointment, RecBilling
+from .serializers import (
+    PatientSerializer, PatientEditSerializer, PatientSearchSerializer,
+    AppointmentSerializer, RecBillingSerializer
+)
+from .permissions import IsReceptionist, IsDoctor, IsAdminOrStaff
 
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        response.data = {
-            'message': 'Successfully added',
-            'patient_reg_number': response.data.get('id'),
-            'data': response.data
-        }
-        return response
+# Patients
+class PatientViewSet(viewsets.GenericViewSet,
+                     mixins.ListModelMixin,
+                     mixins.CreateModelMixin,
+                     mixins.RetrieveModelMixin,
+                     mixins.UpdateModelMixin):
+    queryset = Patient.objects.all().order_by('-patient_created_at')
+    permission_classes = [IsAuthenticated & IsReceptionist]
 
-class PatientRetrieveUpdateDisableView(generics.RetrieveUpdateAPIView):
-    queryset = Patient.objects.filter(is_active=True)
-    serializer_class = PatientSerializer
+    def get_serializer_class(self):
+        if self.action in ['partial_update', 'update']:
+            return PatientEditSerializer
+        return PatientSerializer
 
-    def patch(self, request, *args, **kwargs):
-        patient = self.get_object()
+    def get_queryset(self):
+        # No is_active in schema; return all patients
+        return Patient.objects.all().order_by('-patient_created_at')
 
-        if 'disable' in request.data:
-            disable = request.data.get('disable')
-            if disable:
-                patient.is_active = False
-                patient.save()
-                return Response({'message': 'Successfully disabled'})
+    @action(detail=False, methods=['get'], url_path='search')
+    def search(self, request):
+        s = PatientSearchSerializer(data=request.query_params)
+        s.is_valid(raise_exception=True)
+        qs = self.get_queryset()
+        pid = s.validated_data.get('patient_id')
+        ph = s.validated_data.get('patient_phone')
+        if pid:
+            qs = qs.filter(patient_id__iexact=pid)
+        if ph:
+            qs = qs.filter(patient_phone=ph)
+        return Response(PatientSerializer(qs, many=True).data)
 
-        # Restrict edits to only name and address
-        allowed_fields = ['full_name', 'address']
-        data = {k: v for k, v in request.data.items() if k in allowed_fields}
-        serializer = self.get_serializer(patient, data=data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({'message': 'Updated successfully'})
+    @action(detail=True, methods=['post'], url_path='disable')
+    def disable(self, request, pk=None):
+        # No soft delete flag available; acknowledge request without DB change.
+        # If hard delete is desired, uncomment:
+        # self.get_object().delete()
+        return Response({'message': 'Disable not supported (no soft-delete field).'})
 
-class SearchPatientView(APIView):
-    def get(self, request):
-        reg_number = request.query_params.get('reg_number')
-        phone_number = request.query_params.get('phone_number')
+# Appointments
+class AppointmentViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
+    queryset = Appointment.objects.select_related('patient_id','staff').all().order_by('-appoinment_created_at')
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated & IsReceptionist]
 
-        if reg_number:
-            try:
-                patient = Patient.objects.get(id=reg_number, is_active=True)
-                serializer = PatientSerializer(patient)
-                return Response(serializer.data)
-            except Patient.DoesNotExist:
-                return Response({'message': 'Patient does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        elif phone_number:
-            try:
-                patient = Patient.objects.get(phone_number=phone_number, is_active=True)
-                serializer = PatientSerializer(patient)
-                return Response(serializer.data)
-            except Patient.DoesNotExist:
-                return Response({'message': 'Patient does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        else:
-            return Response({'message': 'Provide either reg_number or phone_number'}, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=True, methods=['patch'], url_path='status')
+    def set_status(self, request, pk=None):
+        appt = self.get_object()
+        status_value = request.data.get('appoinment_status')
+        if status_value not in dict(Appointment.STATUS_CHOICES):
+            return Response({'detail':'Invalid status'}, status=400)
+        appt.appoinment_status = status_value
+        appt.save(update_fields=['appoinment_status'])
+        return Response({'detail':'Status updated','appoinment_status': appt.appoinment_status})
+
+# Doctor self view
+class MyAppointmentsViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Appointment.objects.select_related('patient_id','staff').all()
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated & IsDoctor]
+
+    def get_queryset(self):
+        # Assuming Staff is linked to User via OneToOne; map request.user to Staff
+        try:
+            staff = self.request.user.staff
+        except Exception:
+            return Appointment.objects.none()
+        return super().get_queryset().filter(staff=staff)
+
+# Billing
+class RecBillingViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
+    queryset = RecBilling.objects.select_related('patient_id','staff').all().order_by('-billing_created_at')
+    serializer_class = RecBillingSerializer
+    permission_classes = [IsAuthenticated & IsReceptionist]
