@@ -2,6 +2,10 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Staff, Specialization, WorkingDay, DoctorWorkingSchedule, DoctorDetails
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from Authentication.permissions import IsAdmin, RolePermission
+from rest_framework.permissions import IsAuthenticated
 from .serializers import (
     StaffSerializer,
     SpecializationSerializer,
@@ -11,9 +15,16 @@ from .serializers import (
 )
 
 
+class AdminDashboard(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        return Response({"message": "Welcome Admin!"})
+
 class StaffViewSet(viewsets.ModelViewSet):
     queryset = Staff.objects.all()
     serializer_class = StaffSerializer
+    permission_classes = [IsAuthenticated, IsAdmin, RolePermission(["ADMIN"])]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -42,17 +53,20 @@ class StaffViewSet(viewsets.ModelViewSet):
 class SpecializationViewSet(viewsets.ModelViewSet):
     queryset = Specialization.objects.all()
     serializer_class = SpecializationSerializer
+    permission_classes = [IsAuthenticated, RolePermission(["ADMIN"])]
 
 
 class WorkingDayViewSet(viewsets.ModelViewSet):
     queryset = WorkingDay.objects.all()
     serializer_class = WorkingDaySerializer
+    permission_classes = [IsAuthenticated, RolePermission(["ADMIN"])]
 
 
 # ✅ New: Manage doctor details directly if needed
 class DoctorDetailsViewSet(viewsets.ModelViewSet):
     queryset = DoctorDetails.objects.select_related("staff", "specialization").prefetch_related("schedules__day")
     serializer_class = DoctorDetailsSerializer
+    permission_classes = [IsAuthenticated, RolePermission(["ADMIN"])]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -65,6 +79,7 @@ class DoctorDetailsViewSet(viewsets.ModelViewSet):
 class DoctorWorkingScheduleViewSet(viewsets.ModelViewSet):
     queryset = DoctorWorkingSchedule.objects.all()
     serializer_class = DoctorWorkingScheduleSerializer
+    permission_classes = [IsAuthenticated, RolePermission(["ADMIN"])]
 
     def get_queryset(self):
         queryset = super().get_queryset()
