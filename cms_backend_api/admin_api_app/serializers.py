@@ -1,30 +1,46 @@
 import re
 from datetime import date
-from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
+from django.utils.crypto import get_random_string
+from django.utils import timezone
+from rest_framework import serializers
+
 from .models import Staff, DoctorDetails, Specialization, WorkingDay, DoctorWorkingSchedule
 
 User = get_user_model()
 
 
+# ----------------------------
+# User summary
+# ----------------------------
 class UserSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "username", "role"]
+        fields = ["id", "username", "email", "role"]
 
 
+# ----------------------------
+# Specialization
+# ----------------------------
 class SpecializationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Specialization
         fields = ['id', 'name']
 
 
+# ----------------------------
+# Working Day
+# ----------------------------
 class WorkingDaySerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkingDay
         fields = ["id", "name"]
 
 
+# ----------------------------
+# Doctor Working Schedule
+# ----------------------------
 class DoctorWorkingScheduleSerializer(serializers.ModelSerializer):
     day = WorkingDaySerializer(read_only=True)
     day_id = serializers.PrimaryKeyRelatedField(
@@ -38,6 +54,9 @@ class DoctorWorkingScheduleSerializer(serializers.ModelSerializer):
         fields = ["id", "day", "day_id", "start_time", "end_time"]
 
 
+# ----------------------------
+# Doctor Details
+# ----------------------------
 class DoctorDetailsSerializer(serializers.ModelSerializer):
     specialization = SpecializationSerializer(read_only=True)
     specialization_id = serializers.PrimaryKeyRelatedField(
@@ -59,48 +78,26 @@ class DoctorDetailsSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["staff"]
 
-    # ✅ Consultation fee validation
     def validate_consultation_fee(self, value):
         if value < 100:
             raise serializers.ValidationError("Consultation fee must be at least 100.")
         return value
 
-    def create(self, validated_data):
-        schedules_data = validated_data.pop("schedules", [])
-        doctor = DoctorDetails.objects.create(**validated_data)
 
-        for schedule_data in schedules_data:
-            DoctorWorkingSchedule.objects.create(doctor=doctor, **schedule_data)
-
-        return doctor
-
-    def update(self, instance, validated_data):
-        schedules_data = validated_data.pop("schedules", None)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-
-        if schedules_data is not None:
-            instance.schedules.all().delete()
-            for schedule_data in schedules_data:
-                DoctorWorkingSchedule.objects.create(doctor=instance, **schedule_data)
-
-        return instance
-
-
-
+# ----------------------------
+# Staff Serializer
+# ----------------------------
 class StaffSerializer(serializers.ModelSerializer):
     doctor_details = DoctorDetailsSerializer(required=False)
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), write_only=True)
     user_info = UserSummarySerializer(source="user", read_only=True)
+    role = serializers.CharField(write_only=True)
+    generated_password = serializers.CharField(read_only=True)
 
     class Meta:
         model = Staff
         fields = [
             'id',
             'staff_id',
-            'user',
             'user_info',
             'name',
             'blood_group',
@@ -110,11 +107,13 @@ class StaffSerializer(serializers.ModelSerializer):
             'dob',
             'gender',
             'date_of_joining',
-            'doctor_details'
+            'role',
+            'doctor_details',
+            'generated_password'
         ]
         read_only_fields = ['staff_id', 'date_of_joining']
 
-    # ---------- FIELD LEVEL VALIDATIONS ----------
+    # ---------- FIELD VALIDATIONS ----------
     def validate_name(self, value):
         if not re.match(r'^[A-Za-z\s]+$', value):
             raise serializers.ValidationError("Name should contain only alphabets and spaces.")
@@ -129,7 +128,6 @@ class StaffSerializer(serializers.ModelSerializer):
         return value.upper()
 
     def validate_email(self, value):
-        # Django's EmailField already validates format
         if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", value):
             raise serializers.ValidationError("Invalid email format.")
         return value
@@ -138,7 +136,7 @@ class StaffSerializer(serializers.ModelSerializer):
         if not re.match(r'^[6-9]\d{9}$', str(value)):
             raise serializers.ValidationError("Phone number must be 10 digits and start with 6,7,8, or 9.")
         return value
-    
+
     def validate_gender(self, value):
         valid_genders = {"Male", "Female", "Other"}
         if value not in valid_genders:
@@ -147,48 +145,62 @@ class StaffSerializer(serializers.ModelSerializer):
 
     # ---------- OBJECT LEVEL VALIDATION ----------
     def validate(self, attrs):
-        user = attrs.get("user") or getattr(self.instance, "user", None)
-        dob = attrs.get("dob") or getattr(self.instance, "dob", None)
+        dob = attrs.get("dob")
+        role = attrs.get("role")
 
         if dob:
             today = date.today()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            if role == "DOC" and (age < 25 or age > 80):
+                raise serializers.ValidationError({"dob": "Doctor's age must be between 25 and 80."})
+            elif role != "DOC" and (age < 18 or age > 80):
+                raise serializers.ValidationError({"dob": "Staff age must be between 18 and 80."})
 
-            if user and user.role == "DOC":
-                if age < 25 or age > 80:
-                    raise serializers.ValidationError({"dob": "Doctor's age must be between 25 and 80."})
-            else:
-                if age < 18 or age > 80:
-                    raise serializers.ValidationError({"dob": "Staff age must be between 18 and 80."})
-
-        doctor_data = self.initial_data.get("doctor_details", None)
-        if user:
-            if user.role == "DOC":
-                if not doctor_data and not (self.instance and hasattr(self.instance, "doctor_details")):
-                    raise serializers.ValidationError(
-                        {"doctor_details": "Doctor details are required for Doctor role."}
-                    )
-            else:
-                if doctor_data:
-                    raise serializers.ValidationError(
-                        {"doctor_details": "Doctor details are only allowed for Doctor role."}
-                    )
+        doctor_data = self.initial_data.get("doctor_details")
+        if role == "DOC" and not doctor_data:
+            raise serializers.ValidationError({"doctor_details": "Doctor details are required for Doctor role."})
+        if role != "DOC" and doctor_data:
+            raise serializers.ValidationError({"doctor_details": "Doctor details allowed only for Doctor role."})
 
         return attrs
 
-    # ---------- CREATE / UPDATE ----------
+    # ---------- CREATE ----------
     def create(self, validated_data):
         doctor_data = validated_data.pop("doctor_details", None)
+        role = validated_data.pop("role")
+
+        email = validated_data["email"]
+
+        # Check duplicate user
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+
+        # Create User
+        password = get_random_string(8)
+        user = User.objects.create(
+            username=email,
+            email=email,
+            role=role.upper(),
+            password=make_password(password),
+        )
+        validated_data["user"] = user
+
+        # Ensure date_of_joining
+        if not validated_data.get("date_of_joining"):
+            validated_data["date_of_joining"] = timezone.now().date()
+
         staff = Staff.objects.create(**validated_data)
 
-        if staff.user.role == "DOC" and doctor_data:
+        if role.upper() == "DOC" and doctor_data:
             schedules_data = doctor_data.pop("schedules", [])
             doctor = DoctorDetails.objects.create(staff=staff, **doctor_data)
             for schedule_data in schedules_data:
                 DoctorWorkingSchedule.objects.create(doctor=doctor, **schedule_data)
 
+        staff.generated_password = password
         return staff
 
+    # ---------- UPDATE ----------
     def update(self, instance, validated_data):
         doctor_data = validated_data.pop("doctor_details", None)
 
@@ -199,7 +211,7 @@ class StaffSerializer(serializers.ModelSerializer):
         if instance.user.role == "DOC":
             if doctor_data:
                 schedules_data = doctor_data.pop("schedules", None)
-                doctor_details, created = DoctorDetails.objects.get_or_create(staff=instance)
+                doctor_details, _ = DoctorDetails.objects.get_or_create(staff=instance)
                 for attr, value in doctor_data.items():
                     setattr(doctor_details, attr, value)
                 doctor_details.save()
@@ -209,9 +221,7 @@ class StaffSerializer(serializers.ModelSerializer):
                     for schedule_data in schedules_data:
                         DoctorWorkingSchedule.objects.create(doctor=doctor_details, **schedule_data)
             else:
-                raise serializers.ValidationError(
-                    {"doctor_details": "Doctor details are required for Doctor role."}
-                )
+                raise serializers.ValidationError({"doctor_details": "Doctor details required for DOC."})
         else:
             DoctorDetails.objects.filter(staff=instance).delete()
 

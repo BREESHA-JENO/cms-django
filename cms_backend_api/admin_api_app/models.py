@@ -14,7 +14,7 @@ class Staff(models.Model):
     blood_group = models.CharField(max_length=5)
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15, unique=True)
-    date_of_joining = models.DateField()
+    date_of_joining = models.DateField(auto_now_add=True)
     address = models.TextField()
 
     def save(self, *args, **kwargs):
