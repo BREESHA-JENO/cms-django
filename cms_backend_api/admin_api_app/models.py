@@ -1,5 +1,7 @@
 from django.db import models
 from Authentication.models import User
+from django.core.exceptions import ValidationError
+
 
 class Staff(models.Model):
     id = models.AutoField(primary_key=True)
@@ -33,12 +35,59 @@ class Staff(models.Model):
         return f"{self.staff_id} - {self.name}"
 
 
+class Specialization(models.Model):
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return self.name
+
+class WorkingDay(models.Model):
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=20, unique=True)  # e.g., Monday, Tuesday
+
+    def __str__(self):
+        return self.name
+
+
 class DoctorDetails(models.Model):
     staff = models.OneToOneField(Staff, on_delete=models.CASCADE, related_name="doctor_details")
-    specialization = models.CharField(max_length=100)
-    working_days = models.CharField(max_length=50)   # e.g., Mon-Fri
-    working_hours = models.CharField(max_length=50)  # e.g., 10AM-5PM
+    specialization = models.ForeignKey(Specialization, on_delete=models.PROTECT, related_name="doctors")
     consultation_fee = models.DecimalField(max_digits=10, decimal_places=2)
 
     def __str__(self):
-        return f"{self.staff.name} - {self.specialization}"
+        return f"{self.staff.name} - {self.specialization.name}"
+
+    class Meta:
+        verbose_name = "Doctor Detail"
+        verbose_name_plural = "Doctor Details"
+
+
+class DoctorWorkingSchedule(models.Model):
+    doctor = models.ForeignKey(DoctorDetails, on_delete=models.CASCADE, related_name="schedules")
+    day = models.ForeignKey(WorkingDay, on_delete=models.CASCADE, related_name="schedules")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    def clean(self):
+        if self.end_time <= self.start_time:
+            raise ValidationError("End time must be after start time")
+
+        # Check overlapping shifts
+        overlapping = DoctorWorkingSchedule.objects.filter(
+            doctor=self.doctor,
+            day=self.day
+        ).exclude(pk=self.pk).filter(
+            start_time__lt=self.end_time,
+            end_time__gt=self.start_time
+        )
+        if overlapping.exists():
+            raise ValidationError("Shift overlaps with an existing schedule")
+
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    class Meta:
+        unique_together = ("doctor", "day", "start_time", "end_time")
