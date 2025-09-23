@@ -1,4 +1,4 @@
-from .models import ConsultationNotes, PrescriptionLab, PrescriptionMed
+
 from rest_framework import serializers
 from django.db import IntegrityError, transaction
 from .models import (
@@ -8,10 +8,10 @@ from .models import (
     PrescriptionLab,
     PrescriptionLabDetail,
 )
-from receptionist_api_app.models import appointments
-from admin_api_app.models import staff
-from pharmacist_api_app.models import pharmacist_medicine
-from labtech_api_app.models import lab_tests
+from receptionist_api_app.models import Appointment
+from admin_api_app.models import Staff
+from pharmacist_api_app.models import Prescription
+from labtech_api_app.models import LabResult, LabTest
 
 
 
@@ -20,7 +20,7 @@ from labtech_api_app.models import lab_tests
 # -------------------------
 class PrescriptionMedDetailSerializer(serializers.ModelSerializer):
     # medicine is a FK to pharmacist_medicine; accept its PK in requests.
-    medicine = serializers.PrimaryKeyRelatedField(queryset=pharmacist_medicine.objects.all())
+    medicine = serializers.PrimaryKeyRelatedField(queryset=Prescription.objects.all())
 
     class Meta:
         model = PrescriptionMedDetail
@@ -39,8 +39,8 @@ class PrescriptionMedDetailSerializer(serializers.ModelSerializer):
 class PrescriptionMedSerializer(serializers.ModelSerializer):
     # Use PK fields for related models so client sends IDs only (lightweight).
     consultation_id = serializers.PrimaryKeyRelatedField(queryset=ConsultationNotes.objects.all())
-    appointment_id = serializers.PrimaryKeyRelatedField(queryset=appointments.objects.all())
-    staff_id = serializers.PrimaryKeyRelatedField(queryset=staff.objects.all())
+    appointment_id = serializers.PrimaryKeyRelatedField(queryset=Appointment.objects.all())
+    staff_id = serializers.PrimaryKeyRelatedField(queryset=Staff.objects.all())
 
     # `details` is write-only input for nested creation/update of PrescriptionMedDetail rows.
     # It expects a list of objects matching PrescriptionMedDetailSerializer.
@@ -103,7 +103,7 @@ class PrescriptionMedSerializer(serializers.ModelSerializer):
 # -------------------------
 class PrescriptionLabDetailSerializer(serializers.ModelSerializer):
     # lab_test is a FK to lab_tests; accept its PK.
-    lab_test = serializers.PrimaryKeyRelatedField(queryset=lab_tests.objects.all())
+    lab_test = serializers.PrimaryKeyRelatedField(queryset=LabTest.objects.all())
 
     class Meta:
         model = PrescriptionLabDetail
@@ -115,8 +115,8 @@ class PrescriptionLabDetailSerializer(serializers.ModelSerializer):
 # -------------------------
 class PrescriptionLabSerializer(serializers.ModelSerializer):
     consultation_id = serializers.PrimaryKeyRelatedField(queryset=ConsultationNotes.objects.all())
-    appointment_id = serializers.PrimaryKeyRelatedField(queryset=appointments.objects.all())
-    staff_id = serializers.PrimaryKeyRelatedField(queryset=staff.objects.all())
+    appointment_id = serializers.PrimaryKeyRelatedField(queryset=Appointment.objects.all())
+    staff_id = serializers.PrimaryKeyRelatedField(queryset=Staff.objects.all())
 
     # Nested input for creating/updating lab test prescriptions
     details = PrescriptionLabDetailSerializer(many=True, write_only=True)
@@ -176,11 +176,11 @@ class ConsultationNotesSerializer(serializers.ModelSerializer):
     # Use PrimaryKeyRelatedField so API accepts/returns the appointment's primary key (ID)
     # rather than embedding the entire appointment object.
     appointment_id = serializers.PrimaryKeyRelatedField(
-        queryset=appointments.objects.all()
+        queryset=Appointment.objects.all()
     )
     # Same for staff: accept/validate an integer staff PK.
     staff_id = serializers.PrimaryKeyRelatedField(
-        queryset=staff.objects.all()
+        queryset=Staff.objects.all()
     )
     
     prescriptions_med = PrescriptionMedSerializer(
