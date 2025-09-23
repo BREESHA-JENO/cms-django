@@ -85,9 +85,9 @@ WSGI_APPLICATION = 'cms_backend_api.wsgi.application'
 DATABASES = {
     'default': {
     'ENGINE': 'django.db.backends.mysql',
-    'NAME': 'cms_api_2025', # Database name
+    'NAME': 'cms_camp5', # Database name
     'USER':'root',
-    'PASSWORD':'Breesha@123',
+    'PASSWORD':'faith',
     'HOST':'localhost',
     'PORT':3306,
     }
