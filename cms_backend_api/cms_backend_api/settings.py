@@ -87,9 +87,9 @@ DATABASES = {
     'ENGINE': 'django.db.backends.mysql',
     'NAME': 'cms_api_2025', # Database name
     'USER':'root',
-    'PASSWORD':'faith',
+    'PASSWORD':'Breesha@123',
     'HOST':'localhost',
-    'PORT':3306
+    'PORT':3306,
     }
 }
 
