@@ -1,4 +1,18 @@
-# receptionist_api_app/urls.py
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import (
+    LabTestCategoryViewSet,
+    LabTestViewSet,
+    LabResultViewSet,
+    LabBillingViewSet,
+)
 
-urlpatterns = []  # keep it empty for now
+router = DefaultRouter()
+router.register(r'categories', LabTestCategoryViewSet, basename='labtestcategory')
+router.register(r'tests', LabTestViewSet, basename='labtest')
+router.register(r'results', LabResultViewSet, basename='labresult')
+router.register(r'billings', LabBillingViewSet, basename='labbilling')
+
+urlpatterns = [
+    path('', include(router.urls)),
+]
