@@ -6,7 +6,7 @@ from django.utils.crypto import get_random_string
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Staff, DoctorDetails, Specialization, WorkingDay, DoctorWorkingSchedule
+from .models import Staff, DoctorDetails, Specialization, WorkingDay, DoctorWorkingSchedule, LeaveRequest
 
 User = get_user_model()
 
@@ -177,12 +177,24 @@ class StaffSerializer(serializers.ModelSerializer):
 
         # Create User
         password = get_random_string(8)
+        # Generate username as employeename@healthis.com
+        employee_name = validated_data['name'].replace(" ", "").lower()
+        username = f"{employee_name}@healthis.com"
+
+        # Avoid duplicates
+        counter = 1
+        base_username = username
+        while User.objects.filter(username=username).exists():
+            username = f"{employee_name}{counter}@healthis.com"
+            counter += 1
+
         user = User.objects.create(
-            username=email,
+            username=username,
             email=email,
             role=role.upper(),
             password=make_password(password),
         )
+
         validated_data["user"] = user
 
         # Ensure date_of_joining
@@ -226,3 +238,12 @@ class StaffSerializer(serializers.ModelSerializer):
             DoctorDetails.objects.filter(staff=instance).delete()
 
         return instance
+
+# admin/serializers.py
+class LeaveRequestSerializer(serializers.ModelSerializer):
+    staff_info = StaffSerializer(source="staff", read_only=True)
+
+    class Meta:
+        model = LeaveRequest
+        fields = ['id', 'staff', 'staff_info', 'start_date', 'end_date', 'reason', 'status', 'requested_at']
+        read_only_fields = ['status', 'requested_at']

@@ -4,15 +4,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
-from .models import Staff, Specialization, WorkingDay, DoctorWorkingSchedule, DoctorDetails
+from .models import Staff, Specialization, WorkingDay, DoctorWorkingSchedule, DoctorDetails, LeaveRequest
 from .serializers import (
     StaffSerializer,
     SpecializationSerializer,
     WorkingDaySerializer,
     DoctorWorkingScheduleSerializer,
     DoctorDetailsSerializer,
+    LeaveRequestSerializer,
 )
-from Authentication.permissions import IsAdmin, RolePermissionFactory
+from Authentication.permissions import IsAdmin, RolePermissionFactory , IsReceptionist
+from rest_framework import permissions
 
 User = get_user_model()
 
@@ -109,3 +111,18 @@ class DoctorWorkingScheduleViewSet(viewsets.ModelViewSet):
         if doctor_id:
             queryset = queryset.filter(doctor_id=doctor_id)
         return queryset
+
+class LeaveRequestViewSet(viewsets.ModelViewSet):
+    queryset = LeaveRequest.objects.all()
+    serializer_class = LeaveRequestSerializer
+
+    def get_permissions(self):
+        if self.action in ['create']:
+            permission_classes = [permissions.IsAuthenticated, IsReceptionist]
+        else:
+            permission_classes = [permissions.IsAuthenticated, IsAdmin]
+        return [p() for p in permission_classes]
+
+    def perform_create(self, serializer):
+        staff = Staff.objects.get(user=self.request.user)
+        serializer.save(staff=staff)
