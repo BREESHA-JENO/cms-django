@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     'labtech_api_app',
     'pharmacist_api_app',
     'Authentication',
+    'ae_api_app',
+    'ambulance_api_app',
     'rest_framework',
     'rest_framework_simplejwt',
 ]
