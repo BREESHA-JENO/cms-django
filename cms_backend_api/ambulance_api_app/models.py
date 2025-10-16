@@ -1,6 +1,7 @@
 from django.db import models
 from admin_api_app.models import Staff
 
+
 class Ambulance(models.Model):
     STATUS_CHOICES = [
         ('Available', 'Available'),
@@ -14,16 +15,15 @@ class Ambulance(models.Model):
         Staff,
         on_delete=models.CASCADE,
         limit_choices_to={'user__role': 'AMB'},
-        related_name='ambulance_driver'
+        related_name='ambulance_driver',
+        null=False,    # allow null temporarily
+        blank=False
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available')
     
     def __str__(self):
         return f"{self.vehicle_no} - {self.driver.name}"
 
-
-
-from admin_api_app.models import Staff
 
 class AmbulanceRequest(models.Model):
     STATUS_CHOICES = [
@@ -44,7 +44,7 @@ class AmbulanceRequest(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         related_name='ambulance_requests_created',
-        limit_choices_to={'user__role': 'REC'}  # receptionist
+        limit_choices_to={'user__role': 'REC'}
     )
 
     assigned_driver = models.ForeignKey(
@@ -65,7 +65,7 @@ class AmbulanceRequest(models.Model):
     )
 
     patient_id = models.CharField(max_length=100, null=True, blank=True)
+    completed_time = models.DateTimeField(null=True, blank=True)  # ✅ Added for tracking
 
     def __str__(self):
         return f"Request {self.request_id} - {self.status}"
-

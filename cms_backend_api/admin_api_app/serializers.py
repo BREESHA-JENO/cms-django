@@ -6,7 +6,7 @@ from django.utils.crypto import get_random_string
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Staff, DoctorDetails, Specialization, WorkingDay, DoctorWorkingSchedule, LeaveRequest
+from .models import Staff, DoctorDetails, Specialization, WorkingDay, DoctorWorkingSchedule, LeaveRequest, ForgotPasswordRequest
 
 User = get_user_model()
 
@@ -247,3 +247,11 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         model = LeaveRequest
         fields = ['id', 'staff', 'staff_info', 'start_date', 'end_date', 'reason', 'status', 'requested_at']
         read_only_fields = ['status', 'requested_at']
+
+class ForgotPasswordRequestSerializer(serializers.ModelSerializer):
+    staff_name = serializers.CharField(source='staff.name', read_only=True)
+    staff_email = serializers.EmailField(source='staff.email', read_only=True)
+
+    class Meta:
+        model = ForgotPasswordRequest
+        fields = ['id', 'staff', 'staff_name', 'staff_email', 'reason', 'status', 'requested_at', 'processed_at']

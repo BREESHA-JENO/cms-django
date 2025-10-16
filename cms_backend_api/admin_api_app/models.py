@@ -109,3 +109,18 @@ class LeaveRequest(models.Model):
     def __str__(self):
         return f"{self.staff.name} - {self.status}"
 
+class ForgotPasswordRequest(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    staff = models.ForeignKey(Staff, on_delete=models.CASCADE, related_name="forgot_password_requests")
+    reason = models.TextField(blank=True, null=True)  # optional reason/message from staff
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    requested_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Password Reset Request - {self.staff.name} ({self.status})"

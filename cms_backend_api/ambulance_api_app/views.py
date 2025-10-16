@@ -1,11 +1,12 @@
-# ambulance_api_app/views.py
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import Ambulance, AmbulanceRequest
 from .serializers import AmbulanceSerializer, AmbulanceRequestSerializer
-from Authentication.permissions import IsAdmin, RolePermissionFactory, IsReceptionist
+from Authentication.permissions import IsAdmin, IsReceptionist
 from admin_api_app.models import Staff
+from django.utils import timezone
+
 
 # -----------------------------
 # Ambulance CRUD (Admin only)
@@ -30,7 +31,7 @@ class AmbulanceUpdateView(generics.UpdateAPIView):
 
 
 # -----------------------------
-# AmbulanceRequest Views
+# Ambulance Request Views
 # -----------------------------
 class AmbulanceRequestCreateView(generics.CreateAPIView):
     """
@@ -48,7 +49,8 @@ class AmbulanceRequestCreateView(generics.CreateAPIView):
 class AmbulanceRequestListView(generics.ListAPIView):
     """
     Admin can view all requests.
-    Receptionist can view their own requests.
+    Receptionist can view their own.
+    Drivers can view assigned requests.
     """
     serializer_class = AmbulanceRequestSerializer
     queryset = AmbulanceRequest.objects.all()
@@ -56,9 +58,11 @@ class AmbulanceRequestListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
+        staff = Staff.objects.get(user=user)
         if user.role == 'REC':
-            staff = Staff.objects.get(user=user)
             return AmbulanceRequest.objects.filter(created_by=staff)
+        elif user.role == 'AMB':  # ✅ Added driver view
+            return AmbulanceRequest.objects.filter(assigned_driver=staff)
         return AmbulanceRequest.objects.all()
 
 
@@ -80,12 +84,20 @@ def update_request_status(request, request_id):
         return Response({'error': 'Invalid status value'}, status=400)
 
     req.status = status_value
-    req.save()
 
-    # Automatically free up ambulance when completed/cancelled
-    if req.assigned_ambulance and status_value in ['Completed', 'Cancelled']:
+    # ✅ Automatically update ambulance status
+    if req.assigned_ambulance:
         ambulance = req.assigned_ambulance
-        ambulance.status = 'Available'
-        ambulance.save()
 
+        if status_value == 'Assigned':
+            ambulance.status = 'On Duty'
+            ambulance.save()
+
+        elif status_value in ['Completed', 'Cancelled']:
+            ambulance.status = 'Available'
+            ambulance.save()
+            if status_value == 'Completed':
+                req.completed_time = timezone.now()
+
+    req.save()
     return Response({'success': f'Request {req.request_id} status updated to {status_value}'})

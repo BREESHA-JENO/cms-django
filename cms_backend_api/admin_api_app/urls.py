@@ -8,6 +8,7 @@ from .views import (
     DoctorWorkingScheduleViewSet,
     AdminDashboard,
     LeaveRequestViewSet,  # New import for LeaveRequestViewSet
+    ForgotPasswordRequestViewSet,  # New import for ForgotPasswordRequestViewSet
 )
 
 router = DefaultRouter()
@@ -17,6 +18,8 @@ router.register(r'working-days', WorkingDayViewSet)
 router.register(r'doctor-details', DoctorDetailsViewSet)         
 router.register(r'doctor-schedules', DoctorWorkingScheduleViewSet)  
 router.register(r'leave-requests', LeaveRequestViewSet)  # New endpoint for leave requests
+router.register(r'forgot-password-requests', ForgotPasswordRequestViewSet)
+
 
 urlpatterns = [
     path("dashboard/", AdminDashboard.as_view()),  # ✅ add function-based endpoint
