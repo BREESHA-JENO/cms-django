@@ -25,6 +25,7 @@ class Staff(models.Model):
                 'DOC': 'DOC',
                 'LAB': 'LAB',
                 'PHARM': 'PH',
+                'AMB': 'AMB',
             }
             prefix = prefix_map.get(self.user.role, "ST")
             count = Staff.objects.filter(user__role=self.user.role).count() + 1
@@ -107,3 +108,4 @@ class LeaveRequest(models.Model):
 
     def __str__(self):
         return f"{self.staff.name} - {self.status}"
+

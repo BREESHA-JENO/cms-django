@@ -1,3 +1,4 @@
+# ambulance_api_app/urls.py
 from django.urls import path
 from .views import (
     AmbulanceCreateView, AmbulanceListView, AmbulanceUpdateView,
@@ -5,13 +6,11 @@ from .views import (
 )
 
 urlpatterns = [
-    # Ambulance
-    path('ambulance/create/', AmbulanceCreateView.as_view(), name='ambulance_create'),
-    path('ambulance/list/', AmbulanceListView.as_view(), name='ambulance_list'),
-    path('ambulance/<int:pk>/update/', AmbulanceUpdateView.as_view(), name='ambulance_update'),
+    path('ambulances/', AmbulanceListView.as_view(), name='ambulance-list'),
+    path('ambulances/create/', AmbulanceCreateView.as_view(), name='ambulance-create'),
+    path('ambulances/update/<int:pk>/', AmbulanceUpdateView.as_view(), name='ambulance-update'),
 
-    # Ambulance Requests
-    path('request/create/', AmbulanceRequestCreateView.as_view(), name='ambulance_request_create'),
-    path('request/list/', AmbulanceRequestListView.as_view(), name='ambulance_request_list'),
-    path('request/<int:request_id>/update-status/', update_request_status, name='ambulance_request_update_status'),
+    path('requests/', AmbulanceRequestListView.as_view(), name='ambulance-request-list'),
+    path('requests/create/', AmbulanceRequestCreateView.as_view(), name='ambulance-request-create'),
+    path('requests/<int:request_id>/update-status/', update_request_status, name='update-request-status'),
 ]
