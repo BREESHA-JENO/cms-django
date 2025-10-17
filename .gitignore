@@ -5,5 +5,5 @@ __pycache__/
 *.pyo
 *.pyd
 
-# **/settings.py
-# cms_backend_api/settings.py
+**/settings.py
+cms_backend_api/settings.py
