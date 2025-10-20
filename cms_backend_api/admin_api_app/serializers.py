@@ -109,7 +109,9 @@ class StaffSerializer(serializers.ModelSerializer):
             'date_of_joining',
             'role',
             'doctor_details',
-            'generated_password'
+            'generated_password',
+            'profile_image'
+
         ]
         read_only_fields = ['staff_id', 'date_of_joining']
 
