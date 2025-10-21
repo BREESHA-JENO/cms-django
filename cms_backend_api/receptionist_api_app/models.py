@@ -1,4 +1,3 @@
-# receptionist_api_app/models.py
 from django.db import models
 from admin_api_app.models import Staff
 
@@ -20,7 +19,7 @@ class Patient(models.Model):
     patient_auto_id = models.AutoField(primary_key=True)
     patient_id = models.CharField(max_length=100, unique=True)
     patient_name = models.CharField(max_length=255)
-    patient_email = models.EmailField()
+    patient_email = models.EmailField(blank=True)
     patient_age = models.PositiveIntegerField()
     patient_gender = models.CharField(max_length=10)
     patient_blood_group = models.CharField(max_length=5)
@@ -28,6 +27,7 @@ class Patient(models.Model):
     patient_address = models.TextField()
     patient_reg_date = models.DateField()
     patient_created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)  # For soft delete
 
     def save(self, *args, **kwargs):
         if not self.patient_id or not self.patient_id.strip():

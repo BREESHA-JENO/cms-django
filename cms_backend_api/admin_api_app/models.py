@@ -25,6 +25,7 @@ class Staff(models.Model):
                 'DOC': 'DOC',
                 'LAB': 'LAB',
                 'PHARM': 'PH',
+                'AMB': 'AMB',
             }
             prefix = prefix_map.get(self.user.role, "ST")
             count = Staff.objects.filter(user__role=self.user.role).count() + 1
@@ -91,3 +92,35 @@ class DoctorWorkingSchedule(models.Model):
 
     class Meta:
         unique_together = ("doctor", "day", "start_time", "end_time")
+
+class LeaveRequest(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+    staff = models.ForeignKey(Staff, on_delete=models.CASCADE, related_name="leaves")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.staff.name} - {self.status}"
+
+class ForgotPasswordRequest(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    staff = models.ForeignKey(Staff, on_delete=models.CASCADE, related_name="forgot_password_requests")
+    reason = models.TextField(blank=True, null=True)  # optional reason/message from staff
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    requested_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Password Reset Request - {self.staff.name} ({self.status})"
