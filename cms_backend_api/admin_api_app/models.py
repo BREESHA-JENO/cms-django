@@ -18,6 +18,7 @@ class Staff(models.Model):
     address = models.TextField()
 
     profile_image = models.ImageField(upload_to='staff_profiles/', blank=True, null=True)
+    is_active = models.BooleanField(default=True)
 
 
     def save(self, *args, **kwargs):

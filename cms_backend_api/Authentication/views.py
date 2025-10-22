@@ -6,9 +6,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from django.contrib.auth import authenticate
 from .models import User
-
+from rest_framework.permissions import AllowAny
 
 @api_view(["POST"])
+@permission_classes([AllowAny]) 
 def login_view(request):
     username = request.data.get("username")
     password = request.data.get("password")

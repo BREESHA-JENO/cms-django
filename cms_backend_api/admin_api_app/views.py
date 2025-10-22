@@ -65,6 +65,21 @@ class StaffViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(staff, many=True)
             data[role] = serializer.data
         return Response(data)
+    
+    @action(detail=True, methods=['post'])
+    def disable(self, request, pk=None):
+        staff = self.get_object()
+        staff.is_active = False
+        staff.save()
+        return Response({"status": "staff disabled"}, status=status.HTTP_200_OK)
+
+    # Optionally filter only active staff in queryset:
+    def get_queryset(self):
+        queryset = super().get_queryset().filter(is_active=True)
+        role = self.request.query_params.get("role")
+        if role:
+            queryset = queryset.filter(user__role=role.upper())
+        return queryset
 
 
 # ----------------------------
