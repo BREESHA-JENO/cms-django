@@ -11,6 +11,7 @@ from .models import (
 )
 
 admin.site.register(ConsultationNotes)
+
 admin.site.register(PrescriptionMed)
 admin.site.register(PrescriptionMedDetail)
 admin.site.register(PrescriptionLab)
