@@ -7,3 +7,5 @@ __pycache__/
 
 **/settings.py
 cms_backend_api/settings.py
+
+migrations/

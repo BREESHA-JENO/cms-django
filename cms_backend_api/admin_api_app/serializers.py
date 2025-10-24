@@ -26,7 +26,7 @@ class UserSummarySerializer(serializers.ModelSerializer):
 class SpecializationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Specialization
-        fields = ['id', 'name']
+        fields = ['id', 'name','is_active']
 
 
 # ----------------------------
@@ -88,7 +88,7 @@ class DoctorDetailsSerializer(serializers.ModelSerializer):
 # Staff Serializer
 # ----------------------------
 class StaffSerializer(serializers.ModelSerializer):
-    doctor_details = DoctorDetailsSerializer(required=False)
+    doctor_details = DoctorDetailsSerializer(required=False, allow_null=True)
     user_info = UserSummarySerializer(source="user", read_only=True)
     role = serializers.CharField(write_only=True)
     generated_password = serializers.CharField(read_only=True)
@@ -110,7 +110,8 @@ class StaffSerializer(serializers.ModelSerializer):
             'role',
             'doctor_details',
             'generated_password',
-            'profile_image'
+            'profile_image',
+            'is_active',
 
         ]
         read_only_fields = ['staff_id', 'date_of_joining']
@@ -253,7 +254,9 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
 class ForgotPasswordRequestSerializer(serializers.ModelSerializer):
     staff_name = serializers.CharField(source='staff.name', read_only=True)
     staff_email = serializers.EmailField(source='staff.email', read_only=True)
+    staff_username = serializers.CharField(source='staff.user.username', read_only=True)  # add this line
+
 
     class Meta:
         model = ForgotPasswordRequest
-        fields = ['id', 'staff', 'staff_name', 'staff_email', 'reason', 'status', 'requested_at', 'processed_at']
+        fields = ['id', 'staff', 'staff_name', 'staff_email','staff_username', 'reason', 'status', 'requested_at', 'processed_at']
