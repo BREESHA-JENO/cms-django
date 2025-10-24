@@ -16,6 +16,7 @@ from .serializers import (
     ConsultationNotesSerializer,
     PrescriptionMedSerializer,
     PrescriptionLabSerializer,
+    DoctorAppointmentSerializer,
 )
 
 
@@ -175,6 +176,35 @@ def doctor_dashboard_stats(request):
             'totalConsultations': total_consultations,
             'pendingAppointments': pending_appointments
         })
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        
+
+
+# -------------------------
+# Doctor Appointments Endpoint
+# -------------------------
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def doctor_appointments(request):
+    """
+    Returns appointments for the logged-in doctor with full patient details.
+    This endpoint is specific to the doctor module.
+    """
+    try:
+        # Get the logged-in staff profile
+        staff = request.user.staff_profile
+        
+        # Get all appointments for this doctor
+        appointments = Appointment.objects.filter(staff=staff).select_related('patient_id', 'staff').order_by('-appoinment_created_at')
+        
+        # Serialize with nested patient details
+        serializer = DoctorAppointmentSerializer(appointments, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
             {'error': str(e)},

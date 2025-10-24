@@ -8,7 +8,8 @@ from .models import (
     PrescriptionLab,
     PrescriptionLabDetail,
 )
-from receptionist_api_app.models import Appointment
+from receptionist_api_app.models import Appointment, Patient
+from receptionist_api_app.serializers import PatientSerializer
 from admin_api_app.models import Staff
 from pharmacist_api_app.models import Medicine
 from labtech_api_app.models import  LabTest
@@ -244,4 +245,30 @@ class DoctorAppointmentSerializer(serializers.ModelSerializer):
             "appoinment_status",
             "appoinment_created_at",
         ]   
+
+
+# -------------------------
+# Doctor-Specific Appointment Serializer
+# Returns appointments with nested patient details for doctor views
+# -------------------------
+class DoctorAppointmentSerializer(serializers.ModelSerializer):
+    """
+    Read-only serializer for doctor appointments with full patient details.
+    This is doctor-specific and doesn't affect receptionist functionality.
+    """
+    patient_id = PatientSerializer(read_only=True)  # Nested patient details
+    
+    class Meta:
+        model = Appointment
+        fields = [
+            'appointment_auto_id',
+            'appointment_id',
+            'patient_id',  # Will contain full patient object
+            'staff',
+            'appoinment_date',
+            'appoinment_time',
+            'appoinment_status',
+            'appoinment_created_at'
+        ]
+        read_only_fields = fields  # All fields read-only for doctors
 
