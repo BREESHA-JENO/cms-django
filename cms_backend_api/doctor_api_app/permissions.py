@@ -12,7 +12,7 @@ class IsAssignedDoctor(BasePermission):
         View-level check — ensures only authenticated doctors can access.
         """
         user = request.user
-        return user.is_authenticated and hasattr(user, "staff_profile") and user.role == "DOC"
+        return user.is_authenticated and hasattr(user, "staff_profile") and getattr(user, "role", None) == "DOC"
 
     def has_object_permission(self, request, view, obj):
         """

@@ -77,10 +77,6 @@ class PrescriptionMedSerializer(serializers.ModelSerializer):
         medicine_ids = [detail["medicine"] for detail in details]
         if len(medicine_ids) != len(set(medicine_ids)):
             raise serializers.ValidationError("Duplicate medicines are not allowed.")
-        # Ensure consultation and appointment match
-        if attrs.get("consultation_id") and attrs.get("staff_id"):
-            if attrs["consultation_id"].appointment_id.staff != attrs["staff_id"]:
-                raise serializers.ValidationError("Staff must match consultation doctor.")
         
         return attrs
     # create() handles nested creation of PrescriptionMedDetail rows.
@@ -96,10 +92,6 @@ class PrescriptionMedSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"error": f"Database error: {str(e)}"})
         except Exception as e:
             raise serializers.ValidationError({"error": f"Unexpected error: {str(e)}"})
-
-
-
-    # update() handles updates to the prescription and replaces detail rows with incoming on
 
 
 # -------------------------
@@ -140,7 +132,6 @@ class PrescriptionLabSerializer(serializers.ModelSerializer):
             "created_at",
             "details",
             # "details_out",
-            "created_at",
         ]
         read_only_fields = ("prescription_lab_auto_id", "prescription_lab_id", "staff_id", "created_at")
 
@@ -153,10 +144,6 @@ class PrescriptionLabSerializer(serializers.ModelSerializer):
         lab_ids = [detail["lab_test"].Id for detail in details]
         if len(lab_ids) != len(set(lab_ids)):
             raise serializers.ValidationError("Duplicate lab tests are not allowed.")
-        
-        if attrs.get("consultation_id") and attrs.get("staff_id"):
-            if attrs["consultation_id"].appointment_id.staff != attrs["staff_id"]:
-                raise serializers.ValidationError("Staff must match consultation doctor.")
         
         return attrs
     @transaction.atomic
@@ -181,19 +168,17 @@ class ConsultationNotesSerializer(serializers.ModelSerializer):
     appointment_id = serializers.PrimaryKeyRelatedField(
         queryset=Appointment.objects.all()
     )
-    # Same for staff: accept/validate an integer staff PK.
+    # Staff ID is auto-assigned by the view's perform_create method
     staff_id = serializers.PrimaryKeyRelatedField(
-        queryset=Staff.objects.all()
+        read_only=True
     )
     
     prescriptions_med = PrescriptionMedSerializer(
-        source="prescriptionmed_set",  # Django reverse relation
-        many=True,
+        read_only=True,
         required=False
     )
     prescriptions_lab = PrescriptionLabSerializer(
-        source="prescriptionlab_set",  # Django reverse relation
-        many=True,
+        read_only=True,
         required=False
     )
 
@@ -211,10 +196,17 @@ class ConsultationNotesSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Provide a brief description of symptoms (3+ chars).")
         return value
     
-    # Optional: only one consultation per appointment
+    # Allow consultations on different days, but only ONE per day
     def validate_appointment_id(self, value):
-        if ConsultationNotes.objects.filter(appointment_id=value).exists():
-            raise serializers.ValidationError("A consultation already exists for this appointment.")
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        # Check if a consultation exists for this appointment TODAY
+        if ConsultationNotes.objects.filter(
+            appointment_id=value,
+            created_at__date=today
+        ).exists():
+            raise serializers.ValidationError("A consultation already exists for this appointment today. Please wait for the next appointment.")
         return value
 
     # Object-level validation: ensure diagnosis or notes is present (example business rule).
@@ -227,26 +219,6 @@ class ConsultationNotesSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Either 'diagnosis' or 'notes' must be provided.")
         return data
     
-class DoctorAppointmentSerializer(serializers.ModelSerializer):
-    patient_name = serializers.CharField(source="patient_id.patient_name", read_only=True)
-    patient_id_code = serializers.CharField(source="patient_id.patient_id", read_only=True)
-    staff_name = serializers.CharField(source="staff.name", read_only=True)
-
-    class Meta:
-        model = Appointment
-        fields = [
-            "appointment_auto_id",
-            "appointment_id",
-            "patient_name",
-            "patient_id_code",
-            "staff_name",
-            "appoinment_date",
-            "appoinment_time",
-            "appoinment_status",
-            "appoinment_created_at",
-        ]   
-
-
 # -------------------------
 # Doctor-Specific Appointment Serializer
 # Returns appointments with nested patient details for doctor views
