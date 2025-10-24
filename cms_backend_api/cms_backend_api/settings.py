@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     'ambulance_api_app',
     'rest_framework',
     'rest_framework_simplejwt',
+    'corsheaders',
+    
 ]
 
 MIDDLEWARE = [
@@ -58,6 +60,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware'
 ]
 
 ROOT_URLCONF = 'cms_backend_api.urls'
@@ -156,3 +159,5 @@ AUTH_USER_MODEL = 'Authentication.User'
 #     'SLIDING_TOKEN_REFRESH_LIFETIME_LATE_USER': timedelta(days=1),
 #     'SLIDING_TOKEN_LIFETIME_LATE_USER': timedelta(days=30),
 # }
+
+CORS_ALLOW_ALL_ORIGINS = True

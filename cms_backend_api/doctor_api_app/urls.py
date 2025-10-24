@@ -4,6 +4,7 @@ from .views import (
     ConsultationNotesViewSet,
     PrescriptionMedViewSet,
     PrescriptionLabViewSet,
+    DoctorAppointmentViewSet,
 )
 
 # Router will auto-generate CRUD endpoints
@@ -11,6 +12,7 @@ router = DefaultRouter()
 router.register(r"consultations", ConsultationNotesViewSet, basename="consultations")
 router.register(r"prescriptions/med", PrescriptionMedViewSet, basename="prescriptions-med")
 router.register(r"prescriptions/lab", PrescriptionLabViewSet, basename="prescriptions-lab")
+router.register(r'appointments', DoctorAppointmentViewSet, basename='doctor-appointments')
 
 urlpatterns = [
     path("", include(router.urls)),
