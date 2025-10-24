@@ -77,6 +77,9 @@ class PrescriptionMedSerializer(serializers.ModelSerializer):
         if len(medicine_ids) != len(set(medicine_ids)):
             raise serializers.ValidationError("Duplicate medicines are not allowed.")
         # Ensure consultation and appointment match
+        if attrs.get("consultation_id") and attrs.get("staff_id"):
+            if attrs["consultation_id"].appointment_id.staff != attrs["staff_id"]:
+                raise serializers.ValidationError("Staff must match consultation doctor.")
         
         return attrs
     # create() handles nested creation of PrescriptionMedDetail rows.
@@ -151,7 +154,7 @@ class PrescriptionLabSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Duplicate lab tests are not allowed.")
         
         if attrs.get("consultation_id") and attrs.get("staff_id"):
-            if attrs["consultation_id"].staff_id != attrs["staff_id"]:
+            if attrs["consultation_id"].appointment_id.staff != attrs["staff_id"]:
                 raise serializers.ValidationError("Staff must match consultation doctor.")
         
         return attrs
@@ -222,4 +225,23 @@ class ConsultationNotesSerializer(serializers.ModelSerializer):
         if (diagnosis is None or str(diagnosis).strip() == "") and (notes is None or str(notes).strip() == ""):
             raise serializers.ValidationError("Either 'diagnosis' or 'notes' must be provided.")
         return data
+    
+class DoctorAppointmentSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source="patient_id.patient_name", read_only=True)
+    patient_id_code = serializers.CharField(source="patient_id.patient_id", read_only=True)
+    staff_name = serializers.CharField(source="staff.name", read_only=True)
+
+    class Meta:
+        model = Appointment
+        fields = [
+            "appointment_auto_id",
+            "appointment_id",
+            "patient_name",
+            "patient_id_code",
+            "staff_name",
+            "appoinment_date",
+            "appoinment_time",
+            "appoinment_status",
+            "appoinment_created_at",
+        ]   
 
