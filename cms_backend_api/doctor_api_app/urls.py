@@ -5,6 +5,7 @@ from .views import (
     PrescriptionMedViewSet,
     PrescriptionLabViewSet,
     DoctorAppointmentViewSet,
+    doctor_dashboard_stats,
 )
 
 # Router will auto-generate CRUD endpoints
@@ -16,4 +17,5 @@ router.register(r'appointments', DoctorAppointmentViewSet, basename='doctor-appo
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("dashboard/stats/", doctor_dashboard_stats, name="dashboard-stats"),
 ]

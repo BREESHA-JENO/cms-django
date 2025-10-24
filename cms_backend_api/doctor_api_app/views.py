@@ -1,8 +1,12 @@
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from django.utils import timezone
+from datetime import date
+from rest_framework.decorators import api_view, permission_classes
 
+from rest_framework.exceptions import PermissionDenied
+from receptionist_api_app.models import Appointment
 from Authentication.permissions import IsDoctor
 from .permissions import IsAssignedDoctor
 from .serializers import DoctorAppointmentSerializer
@@ -108,12 +112,71 @@ class PrescriptionLabViewSet(NoUpdateDeleteMixin, StaffFilteredQuerysetMixin, vi
 class DoctorAppointmentViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Doctors can view only appointments assigned to them by receptionists.
+    Optional filter: ?date=YYYY-MM-DD
     """
     serializer_class = DoctorAppointmentSerializer
     permission_classes = [IsAuthenticated, IsDoctor]
 
     def get_queryset(self):
         user = self.request.user
-        if hasattr(user, "staff_profile"):
-            return Appointment.objects.filter(staff=user.staff_profile).order_by("appoinment_date", "appoinment_time")
-        return Appointment.objects.none()
+        if not hasattr(user, "staff_profile"):
+            return Appointment.objects.none()
+
+        queryset = Appointment.objects.filter(staff=user.staff_profile)
+
+        # Optional filter by date
+        date_param = self.request.query_params.get("date")
+        if date_param:
+            queryset = queryset.filter(appoinment_date=date_param)
+
+        return queryset.order_by("appoinment_date", "appoinment_time")
+
+
+
+# -------------------------
+# Dashboard Statistics Endpoint
+# -------------------------
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def doctor_dashboard_stats(request):
+    """
+    Returns dashboard statistics for the logged-in doctor:
+    - Total appointments
+    - Today's appointments
+    - Total consultations done
+    - Pending appointments
+    """
+    try:
+        # Get the logged-in staff profile
+        staff = request.user.staff_profile
+        
+        # Total appointments for this doctor
+        total_appointments = Appointment.objects.filter(staff=staff).count()
+        
+        # Today's appointments
+        today = date.today()
+        today_appointments = Appointment.objects.filter(
+            staff=staff,
+            appoinment_date=today
+        ).count()
+        
+        # Total consultations done by this doctor
+        total_consultations = ConsultationNotes.objects.filter(staff_id=staff).count()
+        
+        # Pending appointments (status = 'Scheduled')
+        pending_appointments = Appointment.objects.filter(
+            staff=staff,
+            appoinment_status='Scheduled'
+        ).count()
+        
+        return Response({
+            'totalAppointments': total_appointments,
+            'todayAppointments': today_appointments,
+            'totalConsultations': total_consultations,
+            'pendingAppointments': pending_appointments
+        })
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
