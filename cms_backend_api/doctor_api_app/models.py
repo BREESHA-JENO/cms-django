@@ -1,4 +1,3 @@
-
 from django.db import models
 from receptionist_api_app.models import Appointment
 from admin_api_app.models import Staff

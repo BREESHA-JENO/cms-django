@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.contrib.auth.hashers import make_password
 import random, string
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import get_user_model
 from .models import Staff, Specialization, WorkingDay, DoctorWorkingSchedule, DoctorDetails, LeaveRequest, ForgotPasswordRequest
 from .serializers import (
@@ -19,6 +19,8 @@ from .serializers import (
 )
 from Authentication.permissions import IsAdmin, RolePermissionFactory , IsReceptionist
 from rest_framework import permissions
+from django.db.models import Q
+
 
 User = get_user_model()
 
@@ -43,10 +45,12 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        # Do NOT filter by is_active here.
         role = self.request.query_params.get("role")
         if role:
             queryset = queryset.filter(user__role=role.upper())
         return queryset
+
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -58,14 +62,27 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def grouped(self, request):
-        roles = ['ADMIN', 'REC', 'DOC', 'LAB', 'PHARM']
+        roles = ['ADMIN', 'REC', 'DOC', 'LAB', 'PHARM', 'AMB']
         data = {}
         for role in roles:
             staff = self.get_queryset().filter(user__role=role)
             serializer = self.get_serializer(staff, many=True)
             data[role] = serializer.data
         return Response(data)
-
+    
+    @action(detail=True, methods=['post'])
+    def disable(self, request, pk=None):
+        staff = self.get_object()
+        staff.is_active = False
+        staff.save()
+        return Response({"status": "staff disabled"}, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
+    def enable(self, request, pk=None):
+        staff = self.get_object()
+        staff.is_active = True
+        staff.save()
+        return Response({"status": "staff enabled"}, status=status.HTTP_200_OK)
 
 # ----------------------------
 # Specialization CRUD
@@ -75,6 +92,20 @@ class SpecializationViewSet(viewsets.ModelViewSet):
     serializer_class = SpecializationSerializer
     permission_classes = [IsAuthenticated, RolePermissionFactory(["ADMIN"])]
 
+    @action(detail=True, methods=['post'])
+    def disable(self, request, pk=None):
+        specialization = self.get_object()
+        specialization.is_active = False
+        specialization.save()
+        return Response({"status": "specialization disabled"}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def enable(self, request, pk=None):
+        specialization = self.get_object()
+        specialization.is_active = True
+        specialization.save()
+        return Response({"status": "specialization enabled"}, status=status.HTTP_200_OK)
+
 
 # ----------------------------
 # WorkingDay CRUD
@@ -83,7 +114,6 @@ class WorkingDayViewSet(viewsets.ModelViewSet):
     queryset = WorkingDay.objects.all()
     serializer_class = WorkingDaySerializer
     permission_classes = [IsAuthenticated, RolePermissionFactory(["ADMIN"])]
-
 
 # ----------------------------
 # DoctorDetails CRUD
@@ -135,34 +165,48 @@ class ForgotPasswordRequestViewSet(viewsets.ModelViewSet):
     queryset = ForgotPasswordRequest.objects.all()
     serializer_class = ForgotPasswordRequestSerializer
 
+    def get_permissions(self):
+        # Anyone can create forgot password requests (no login required)
+        # Admin-only permission for other actions (approve/reject)
+        if self.action == "create":
+            permission_classes = [AllowAny]
+        else:
+            permission_classes = [IsAuthenticated, IsAdmin]
+        return [permission() for permission in permission_classes]
+
     def create(self, request):
-        # staff submits a forgot password request
-        staff_id = request.data.get('staff_id')
-        reason = request.data.get('reason', '')
+        staff_email = request.data.get('staff_email')  # use email only
+        if not staff_email:
+            return Response({'error': 'Email is required'}, status=400)
 
         try:
-            staff = Staff.objects.get(staff_id=staff_id)
+            staff = Staff.objects.get(Q(user__email=staff_email) | Q(user__username=staff_email))
         except Staff.DoesNotExist:
-            return Response({'error': 'Invalid staff ID'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Username or email does not exist.'}, status=400)
 
-        # Prevent duplicate pending requests
+        # Check for pending request
         if ForgotPasswordRequest.objects.filter(staff=staff, status='PENDING').exists():
-            return Response({'error': 'A pending request already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'A pending request already exists.'}, status=400)
 
-        req = ForgotPasswordRequest.objects.create(staff=staff, reason=reason)
-        return Response({'message': 'Request submitted successfully.'}, status=status.HTTP_201_CREATED)
+        req = ForgotPasswordRequest.objects.create(staff=staff)
+        serializer = self.get_serializer(req)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
     def update(self, request, pk=None):
-        # admin approves/rejects
+        # Approve or reject forgot password request
+
         try:
             req = ForgotPasswordRequest.objects.get(pk=pk)
         except ForgotPasswordRequest.DoesNotExist:
             return Response({'error': 'Request not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        print(f"Approving forgot password for staff: {req.staff.name}, username: {req.staff.user.username}")
 
-        action = request.data.get('action')  # "approve" or "reject"
+        action = request.data.get('action')  # expected 'approve' or 'reject'
 
         if action == 'approve':
-            # generate new random password
+            # Generate a new random password
             new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
             user = req.staff.user
             user.password = make_password(new_password)
@@ -172,9 +216,10 @@ class ForgotPasswordRequestViewSet(viewsets.ModelViewSet):
             req.processed_at = timezone.now()
             req.save()
 
+            # Return new password only to admin - do NOT expose to user frontend
             return Response({
-                'message': f'Password reset successful. New password generated.',
-                'new_password': new_password  # You can log/send via email, don’t expose to frontend directly
+                'message': 'Password reset successful. New password generated.',
+                'new_password': new_password
             })
 
         elif action == 'reject':
@@ -184,3 +229,16 @@ class ForgotPasswordRequestViewSet(viewsets.ModelViewSet):
             return Response({'message': 'Request rejected.'})
 
         return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        current_password = request.data.get("current_password")
+        new_password = request.data.get("new_password")
+        if not user.check_password(current_password):
+            return Response({"current_password": ["Incorrect current password."]}, status=400)
+        user.set_password(new_password)
+        user.save()
+        return Response({"detail": "Password updated successfully."})

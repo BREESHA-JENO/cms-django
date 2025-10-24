@@ -4,11 +4,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
+from admin_api_app.models import Staff
 
 from .models import Patient, Appointment, RecBilling
 from .serializers import (
     PatientSerializer, PatientEditSerializer, PatientSearchSerializer,
-    AppointmentSerializer, RecBillingSerializer
+    AppointmentSerializer, RecBillingSerializer,DoctorSerializer
 )
 from .permissions import IsReceptionist, IsDoctor, IsAdminOrStaff
 
@@ -66,11 +67,20 @@ class AppointmentViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin, mixin
         appt.save(update_fields=['appoinment_status'])
         return Response({'detail':'Status updated','appoinment_status': appt.appoinment_status})
 
+
+# Read-only Doctor ViewSet for Receptionists
+class DoctorViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Receptionists can view doctor list for appointment scheduling
+    """
+    queryset = Staff.objects.filter(user__role='DOC', is_active=True).select_related('user','doctor_details__specialization').order_by('name')
+    serializer_class = DoctorSerializer
+    permission_classes = [IsAuthenticated & IsReceptionist]
 # Doctor self view
 class MyAppointmentsViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Appointment.objects.select_related('patient_id','staff').all()
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated & IsDoctor]
+    permission_classes = [IsAuthenticated & IsDoctor & IsReceptionist]
 
     def get_queryset(self):
         # Assuming Staff is linked to User via OneToOne; map request.user to Staff

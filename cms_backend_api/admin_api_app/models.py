@@ -17,6 +17,10 @@ class Staff(models.Model):
     date_of_joining = models.DateField(auto_now_add=True)
     address = models.TextField()
 
+    profile_image = models.ImageField(upload_to='staff_profiles/', blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+
+
     def save(self, *args, **kwargs):
         if not self.staff_id:
             prefix_map = {
@@ -39,6 +43,7 @@ class Staff(models.Model):
 class Specialization(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
