@@ -1,4 +1,3 @@
-
 from django.db import models
 from receptionist_api_app.models import Appointment
 from admin_api_app.models import Staff
@@ -9,8 +8,8 @@ from admin_api_app.models import Staff
 class ConsultationNotes(models.Model):
     consultation_auto_id = models.AutoField(primary_key=True)
     consultation_id = models.CharField(max_length=100, unique=True)
-    appointment_id = models.ForeignKey(
-        Appointment, on_delete=models.CASCADE, related_name="consultations"
+    appointment_id = models.OneToOneField(
+        Appointment, on_delete=models.CASCADE, related_name="consultations",null=True, blank=True
     )
     staff_id = models.ForeignKey(  # doctor
         Staff, on_delete=models.CASCADE, related_name="doctor_consultations"
@@ -48,12 +47,10 @@ class ConsultationNotes(models.Model):
 class PrescriptionMed(models.Model):
     prescription_auto_id = models.AutoField(primary_key=True)
     prescription_med_id = models.CharField(max_length=100, unique=True)
-    consultation_id = models.ForeignKey(
+    consultation_id = models.OneToOneField(
         ConsultationNotes, on_delete=models.CASCADE, related_name="prescriptions_med"
     )
-    appointment_id = models.ForeignKey(
-        Appointment, on_delete=models.CASCADE, related_name="prescriptions_med"
-    )
+    
     staff_id = models.ForeignKey(
         Staff, on_delete=models.CASCADE, related_name="doctor_prescriptions_med"
     )
@@ -68,7 +65,7 @@ class PrescriptionMed(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        patient = self.appointment_id.patient_id
+        patient = self.consultation_id.appointment_id.patient_id
         return (
             f"Prescription {self.prescription_med_id} | "
             f"Patient: {patient.patient_name} ({patient.patient_id}) | "
@@ -91,7 +88,9 @@ class PrescriptionMedDetail(models.Model):
     prescription = models.ForeignKey(PrescriptionMed, on_delete=models.CASCADE)
     medicine = models.ForeignKey("pharmacist_api_app.Medicine", on_delete=models.CASCADE)
     dosage = models.CharField(max_length=200)
-    quantity = models.IntegerField()
+    quantity = models.PositiveIntegerField(blank=True, null=True)
+    frequency = models.CharField(max_length=100, help_text="e.g., Twice a day", blank=True, null=True)
+    duration = models.CharField(max_length=100, help_text="e.g., 5 days", blank=True, null=True)
     instructions = models.TextField(blank=True, null=True)
 
     def __str__(self):
@@ -103,12 +102,10 @@ class PrescriptionMedDetail(models.Model):
 class PrescriptionLab(models.Model):
     prescription_lab_auto_id = models.AutoField(primary_key=True)
     prescription_lab_id = models.CharField(max_length=100, unique=True)
-    consultation_id = models.ForeignKey(
+    consultation_id = models.OneToOneField(
         ConsultationNotes, on_delete=models.CASCADE, related_name="prescriptions_lab"
     )
-    appointment_id = models.ForeignKey(
-        Appointment, on_delete=models.CASCADE, related_name="prescriptions_lab"
-    )
+   
     staff_id = models.ForeignKey(
         Staff, on_delete=models.CASCADE, related_name="doctor_prescriptions_lab"
     )
@@ -117,13 +114,19 @@ class PrescriptionLab(models.Model):
         through="PrescriptionLabDetail",
         related_name="lab_prescriptions"
     )
+    priority = models.CharField(
+        max_length=20,
+        choices=[("routine", "Routine"), ("urgent", "Urgent")],
+        default="routine"
+    )
+    notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
-        patient = self.appointment_id.patient_id
+        patient = self.consultation_id.appointment_id.patient_id
         return (
             f"Lab Prescription {self.prescription_lab_id} | "
             f"Patient: {patient.patient_name} ({patient.patient_id}) | "
