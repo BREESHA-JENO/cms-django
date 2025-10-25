@@ -5,12 +5,4 @@ __pycache__/
 *.pyo
 *.pyd
 
-<<<<<<< HEAD
-**/settings.py
-cms_backend_api/settings.py
-
 migrations/
-=======
-# **/settings.py
-# cms_backend_api/settings.py
->>>>>>> 3a8316c235eaa9b9a040490208d5ea4b4e40ede7
