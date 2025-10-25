@@ -97,13 +97,15 @@ DATABASES = {
     'ENGINE': 'django.db.backends.mysql',
     'NAME': 'cms_api_2025', # Database name
     'USER':'root',
-    'PASSWORD':'faith',
+    'PASSWORD':'Breesha@123',
     'HOST':'localhost',
     'PORT':3306,
     }
 }
 
-
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # React dev server
+]
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -164,5 +166,3 @@ AUTH_USER_MODEL = 'Authentication.User'
 #     'SLIDING_TOKEN_REFRESH_LIFETIME_LATE_USER': timedelta(days=1),
 #     'SLIDING_TOKEN_LIFETIME_LATE_USER': timedelta(days=30),
 # }
-
-CORS_ALLOW_ALL_ORIGINS = True
