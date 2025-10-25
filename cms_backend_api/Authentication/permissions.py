@@ -1,5 +1,6 @@
 from rest_framework.permissions import BasePermission
 
+
 # ----------------------------
 # Dynamic Role Permission Factory
 # ----------------------------
@@ -36,19 +37,39 @@ class IsAdmin(BasePermission):
 
 class IsReceptionist(BasePermission):
     def has_permission(self, request, view):
-        return request.user and request.user.role == "REC"
+        return (
+            request.user 
+            and request.user.is_authenticated  # ✅ FIXED!
+            and hasattr(request.user, 'role')
+            and request.user.role == "REC"
+        )
 
 
 class IsDoctor(BasePermission):
     def has_permission(self, request, view):
-        return request.user and request.user.role == "DOC"
+        return (
+            request.user 
+            and request.user.is_authenticated  # ✅ FIXED!
+            and hasattr(request.user, 'role')
+            and request.user.role == "DOC"
+        )
 
 
 class IsLabTech(BasePermission):
     def has_permission(self, request, view):
-        return request.user and request.user.role == "LAB"
+        return (
+            request.user 
+            and request.user.is_authenticated  # ✅ FIXED!
+            and hasattr(request.user, 'role')
+            and request.user.role == "LAB"
+        )
 
 
 class IsPharmacist(BasePermission):
     def has_permission(self, request, view):
-        return request.user and request.user.role == "PHARM"
+        return (
+            request.user 
+            and request.user.is_authenticated  # ✅ FIXED!
+            and hasattr(request.user, 'role')
+            and request.user.role == "PHARM"
+        )
