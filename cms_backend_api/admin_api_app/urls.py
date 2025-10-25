@@ -10,6 +10,7 @@ from .views import (
     LeaveRequestViewSet,  # New import for LeaveRequestViewSet
     ForgotPasswordRequestViewSet,  # New import for ForgotPasswordRequestViewSet
     ChangePasswordView,
+    NotificationViewSet,
 )
 
 router = DefaultRouter()
@@ -20,6 +21,7 @@ router.register(r'doctor-details', DoctorDetailsViewSet)
 router.register(r'doctor-schedules', DoctorWorkingScheduleViewSet)  
 router.register(r'leave-requests', LeaveRequestViewSet)  # New endpoint for leave requests
 router.register(r'forgot-password-requests', ForgotPasswordRequestViewSet)
+router.register(r'notifications', NotificationViewSet)
 
 
 urlpatterns = [
