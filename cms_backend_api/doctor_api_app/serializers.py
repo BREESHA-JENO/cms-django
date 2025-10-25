@@ -21,18 +21,33 @@ from labtech_api_app.models import  LabTest
 # -------------------------
 class PrescriptionMedDetailSerializer(serializers.ModelSerializer):
     # medicine is a FK to pharmacist_medicine; accept its PK in requests.
-    medicine = serializers.PrimaryKeyRelatedField(queryset=Medicine.objects.all())
+    medicine = serializers.PrimaryKeyRelatedField(queryset=Medicine.objects.all(), required=False, allow_null=True)
+    custom_medicine_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
     class Meta:
         model = PrescriptionMedDetail
         # Expose id so client can identify existing detail rows, plus business fields.
-        fields = ["id", "medicine", "dosage", "quantity", "instructions"]
+        fields = ["id", "medicine", "custom_medicine_name", "dosage", "quantity", "instructions"]
 
     # Validate quantity is a positive integer
     def validate_quantity(self, value):
         if value is None or value <= 0:
             raise serializers.ValidationError("Quantity must be a positive integer.")
         return value
+    
+    def validate(self, data):
+        medicine = data.get('medicine')
+        custom_name = data.get('custom_medicine_name', '').strip()
+        
+        # Either medicine or custom_medicine_name must be provided
+        if not medicine and not custom_name:
+            raise serializers.ValidationError("Either select a medicine or provide a custom medicine name.")
+        
+        # If custom medicine is provided, medicine should be null
+        if custom_name and medicine:
+            raise serializers.ValidationError("Cannot specify both medicine and custom medicine name.")
+            
+        return data
     
 # -------------------------
 # PrescriptionMed Serializer (nested create/update)
@@ -74,8 +89,24 @@ class PrescriptionMedSerializer(serializers.ModelSerializer):
         details = attrs.get("details", [])
         if not details:
             raise serializers.ValidationError("At least one medicine must be provided.")
-        medicine_ids = [detail["medicine"] for detail in details]
-        if len(medicine_ids) != len(set(medicine_ids)):
+        
+        # Check for duplicates considering both regular and custom medicines
+        medicine_identifiers = []
+        for detail in details:
+            try:
+                medicine = detail.get("medicine")
+                custom_name = detail.get("custom_medicine_name", "").strip()
+                
+                if medicine:
+                    # detail['medicine'] is already a Medicine object from PrimaryKeyRelatedField
+                    medicine_identifiers.append(f"med_{medicine.pk}")
+                elif custom_name:
+                    medicine_identifiers.append(f"custom_{custom_name.lower()}")
+            except (AttributeError, TypeError) as e:
+                # Skip invalid entries but log the issue
+                continue
+        
+        if len(medicine_identifiers) != len(set(medicine_identifiers)):
             raise serializers.ValidationError("Duplicate medicines are not allowed.")
         
         return attrs
@@ -99,11 +130,26 @@ class PrescriptionMedSerializer(serializers.ModelSerializer):
 # -------------------------
 class PrescriptionLabDetailSerializer(serializers.ModelSerializer):
     # lab_test is a FK to lab_tests; accept its PK.
-    lab_test = serializers.PrimaryKeyRelatedField(queryset=LabTest.objects.all())
+    lab_test = serializers.PrimaryKeyRelatedField(queryset=LabTest.objects.all(), required=False, allow_null=True)
+    custom_lab_test_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
     class Meta:
         model = PrescriptionLabDetail
-        fields = ["id", "lab_test", "instructions"]
+        fields = ["id", "lab_test", "custom_lab_test_name", "instructions"]
+    
+    def validate(self, data):
+        lab_test = data.get('lab_test')
+        custom_name = data.get('custom_lab_test_name', '').strip()
+        
+        # Either lab_test or custom_lab_test_name must be provided
+        if not lab_test and not custom_name:
+            raise serializers.ValidationError("Either select a lab test or provide a custom lab test name.")
+        
+        # If custom lab test is provided, lab_test should be null
+        if custom_name and lab_test:
+            raise serializers.ValidationError("Cannot specify both lab test and custom lab test name.")
+            
+        return data
 
 
 # -------------------------
@@ -141,8 +187,23 @@ class PrescriptionLabSerializer(serializers.ModelSerializer):
         if not details:
             raise serializers.ValidationError("At least one lab test must be provided.")
         
-        lab_ids = [detail["lab_test"].Id for detail in details]
-        if len(lab_ids) != len(set(lab_ids)):
+        # Check for duplicates considering both regular and custom lab tests
+        lab_identifiers = []
+        for detail in details:
+            try:
+                lab_test = detail.get("lab_test")
+                custom_name = detail.get("custom_lab_test_name", "").strip()
+                
+                if lab_test:
+                    # detail['lab_test'] is already a LabTest object from PrimaryKeyRelatedField
+                    lab_identifiers.append(f"lab_{lab_test.pk}")
+                elif custom_name:
+                    lab_identifiers.append(f"custom_{custom_name.lower()}")
+            except (AttributeError, TypeError) as e:
+                # Skip invalid entries but log the issue
+                continue
+        
+        if len(lab_identifiers) != len(set(lab_identifiers)):
             raise serializers.ValidationError("Duplicate lab tests are not allowed.")
         
         return attrs

@@ -89,7 +89,8 @@ class PrescriptionMed(models.Model):
 
 class PrescriptionMedDetail(models.Model):
     prescription = models.ForeignKey(PrescriptionMed, on_delete=models.CASCADE)
-    medicine = models.ForeignKey("pharmacist_api_app.Medicine", on_delete=models.CASCADE)
+    medicine = models.ForeignKey("pharmacist_api_app.Medicine", on_delete=models.CASCADE, blank=True, null=True)
+    custom_medicine_name = models.CharField(max_length=200, blank=True, null=True, help_text="Custom medicine not in database")
     dosage = models.CharField(max_length=200)
     quantity = models.PositiveIntegerField(blank=True, null=True)
     frequency = models.CharField(max_length=100, help_text="e.g., Twice a day", blank=True, null=True)
@@ -151,7 +152,8 @@ class PrescriptionLab(models.Model):
 
 class PrescriptionLabDetail(models.Model):
     prescription = models.ForeignKey(PrescriptionLab, on_delete=models.CASCADE)
-    lab_test = models.ForeignKey("labtech_api_app.LabTest", on_delete=models.CASCADE)
+    lab_test = models.ForeignKey("labtech_api_app.LabTest", on_delete=models.CASCADE, blank=True, null=True)
+    custom_lab_test_name = models.CharField(max_length=200, blank=True, null=True, help_text="Custom lab test not in database")
     instructions = models.TextField(blank=True, null=True)
 
     def __str__(self):

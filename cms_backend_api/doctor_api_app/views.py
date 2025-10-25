@@ -1,11 +1,10 @@
 from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.utils import timezone
-from datetime import date, timedelta
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import api_view, permission_classes
-
-from rest_framework.exceptions import PermissionDenied
+from django.utils import timezone
 from receptionist_api_app.models import Appointment
 from pharmacist_api_app.models import Medicine
 from labtech_api_app.models import LabTest
@@ -60,21 +59,38 @@ class ConsultationNotesViewSet(NoUpdateDeleteMixin, StaffFilteredQuerysetMixin, 
 
     def perform_create(self, serializer):
         """Auto-assign the logged-in doctor and ensure they are assigned to this appointment."""
-        staff = self.request.user.staff_profile
-        appointment = serializer.validated_data.get("appointment_id")
+        try:
+            # Get staff profile with error handling
+            if not hasattr(self.request.user, 'staff_profile'):
+                raise PermissionDenied("User does not have a staff profile.")
+            
+            staff = self.request.user.staff_profile
+            if not staff:
+                raise PermissionDenied("Staff profile not found.")
+                
+            appointment = serializer.validated_data.get("appointment_id")
+            if not appointment:
+                raise ValidationError("Appointment ID is required.")
 
-        # ✅ Check that this doctor is assigned to this appointment
-        if appointment.staff != staff:
-            raise PermissionDenied("You are not assigned to this patient's appointment.")
+            # ✅ Check that this doctor is assigned to this appointment
+            if appointment.staff != staff:
+                raise PermissionDenied("You are not assigned to this patient's appointment.")
 
-        # ✅ Save consultation
-        consultation = serializer.save(staff_id=staff)
-        
-        # ✅ Mark appointment as COMPLETED after consultation
-        appointment.appoinment_status = 'Completed'
-        appointment.save()
-        
-        return consultation
+            # ✅ Save consultation
+            consultation = serializer.save(staff_id=staff)
+            
+            # ✅ Mark appointment as COMPLETED after consultation
+            appointment.appoinment_status = 'Completed'
+            appointment.save()
+            
+            return consultation
+            
+        except Exception as e:
+            # Log the error for debugging
+            import traceback
+            print(f"[ERROR] Consultation creation failed: {str(e)}")
+            print(traceback.format_exc())
+            raise
 
 
 # -------------------------
@@ -130,10 +146,11 @@ class DoctorAppointmentViewSet(viewsets.ReadOnlyModelViewSet):
         if not hasattr(user, "staff_profile"):
             return Appointment.objects.none()
 
-        # Get consultations created in the last 24 hours
-        last_24_hours = timezone.now() - timedelta(hours=24)
-        consulted_recent_ids = list(ConsultationNotes.objects.filter(
-            created_at__gte=last_24_hours
+        # Get consultations created TODAY by this doctor (consistent with dashboard stats)
+        today = timezone.now().date()
+        consulted_today_ids = list(ConsultationNotes.objects.filter(
+            staff_id=user.staff_profile,
+            created_at__date=today
         ).values_list('appointment_id', flat=True))
 
         # Get ONLY SCHEDULED appointments for this doctor, excluding completed/cancelled
@@ -141,7 +158,7 @@ class DoctorAppointmentViewSet(viewsets.ReadOnlyModelViewSet):
             staff=user.staff_profile,
             appoinment_status='Scheduled'  # Only show scheduled appointments
         ).exclude(
-            appointment_auto_id__in=consulted_recent_ids
+            appointment_auto_id__in=consulted_today_ids
         )
 
         # Optional filter by date
@@ -172,15 +189,15 @@ def doctor_dashboard_stats(request):
         # Use timezone-aware date to handle timezone correctly
         today = timezone.now().date()
         
-        # Get appointment IDs that have been consulted TODAY
+        # Get appointment IDs that have been consulted TODAY by this doctor
         consulted_today_ids = ConsultationNotes.objects.filter(
+            staff_id=staff,
             created_at__date=today
         ).values_list('appointment_id', flat=True)
         
-        # Total appointments to be consulted (scheduled, not yet consulted TODAY, today onwards)
+        # Total appointments to be consulted (all scheduled appointments not yet consulted TODAY)
         total_appointments_to_consult = Appointment.objects.filter(
             staff=staff,
-            appoinment_date__gte=today,
             appoinment_status='Scheduled'
         ).exclude(
             appointment_auto_id__in=consulted_today_ids
@@ -288,6 +305,7 @@ def patient_consultation_history(request, patient_id):
     - Consultation notes
     - Medicine prescriptions with details
     - Lab test prescriptions with details
+    - Optional month filter: ?month=YYYY-MM
     """
     try:
         from receptionist_api_app.models import Patient
@@ -316,9 +334,26 @@ def patient_consultation_history(request, patient_id):
         appointment_ids = appointments.values_list('appointment_auto_id', flat=True)
         
         # Get all consultations for these appointments
-        consultations = ConsultationNotes.objects.filter(
+        consultations_query = ConsultationNotes.objects.filter(
             appointment_id__in=appointment_ids
-        ).select_related('appointment_id', 'staff_id').order_by('-created_at')
+        ).select_related('appointment_id', 'staff_id')
+        
+        # Apply month filter if provided
+        month_param = request.GET.get('month')
+        if month_param:
+            try:
+                from datetime import datetime
+                # Parse YYYY-MM format
+                year, month = map(int, month_param.split('-'))
+                consultations_query = consultations_query.filter(
+                    created_at__year=year,
+                    created_at__month=month
+                )
+                print(f"[DEBUG] Filtering by month: {month_param}")
+            except (ValueError, TypeError) as e:
+                print(f"[DEBUG] Invalid month format: {month_param}, error: {e}")
+        
+        consultations = consultations_query.order_by('-created_at')
         
         print(f"[DEBUG] Found {consultations.count()} consultations")
         
