@@ -64,6 +64,7 @@ class RecBilling(models.Model):
     BILLING_STATUS_CHOICES = [
         ('Paid', 'Paid'),
         ('Unpaid', 'Unpaid'),
+        ('Partially Paid', 'Partially Paid'),
     ]
     rec_bill_id = models.AutoField(primary_key=True)
     patient_id = models.ForeignKey(Patient, on_delete=models.CASCADE)

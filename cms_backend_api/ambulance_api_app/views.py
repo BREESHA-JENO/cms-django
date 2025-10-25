@@ -1,4 +1,4 @@
-from rest_framework import generics, status, permissions
+from rest_framework import generics, status, permissions,viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import Ambulance, AmbulanceRequest
@@ -6,30 +6,20 @@ from .serializers import AmbulanceSerializer, AmbulanceRequestSerializer
 from Authentication.permissions import IsAdmin, IsReceptionist
 from admin_api_app.models import Staff
 from django.utils import timezone
-
+from Authentication.permissions import RolePermissionFactory
 
 # -----------------------------
 # Ambulance CRUD (Admin only)
-# -----------------------------
-class AmbulanceCreateView(generics.CreateAPIView):
-    serializer_class = AmbulanceSerializer
+# ------------------------------
+class AmbulanceViewSet(viewsets.ModelViewSet):
     queryset = Ambulance.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdmin]
-
-
-class AmbulanceListView(generics.ListAPIView):
     serializer_class = AmbulanceSerializer
-    queryset = Ambulance.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+    lookup_field = "ambulance_id"
 
-
-class AmbulanceUpdateView(generics.UpdateAPIView):
-    serializer_class = AmbulanceSerializer
-    queryset = Ambulance.objects.all()
-    lookup_field = 'pk'
-    permission_classes = [permissions.IsAuthenticated, IsAdmin]
-
-
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated(), RolePermissionFactory(['ADMIN', 'REC', 'AMB'])()]
+        return [permissions.IsAuthenticated(), IsAdmin()]
 # -----------------------------
 # Ambulance Request Views
 # -----------------------------

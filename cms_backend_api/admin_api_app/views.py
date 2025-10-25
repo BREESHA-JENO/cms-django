@@ -7,7 +7,7 @@ import random, string
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import get_user_model
-from .models import Staff, Specialization, WorkingDay, DoctorWorkingSchedule, DoctorDetails, LeaveRequest, ForgotPasswordRequest
+from .models import Staff, Specialization, WorkingDay, DoctorWorkingSchedule, DoctorDetails, LeaveRequest, ForgotPasswordRequest, Notification
 from .serializers import (
     StaffSerializer,
     SpecializationSerializer,
@@ -15,7 +15,8 @@ from .serializers import (
     DoctorWorkingScheduleSerializer,
     DoctorDetailsSerializer,
     LeaveRequestSerializer,
-    ForgotPasswordRequestSerializer
+    ForgotPasswordRequestSerializer,
+    NotificationSerializer,
 )
 from Authentication.permissions import IsAdmin, RolePermissionFactory , IsReceptionist
 from rest_framework import permissions
@@ -83,6 +84,17 @@ class StaffViewSet(viewsets.ModelViewSet):
         staff.is_active = True
         staff.save()
         return Response({"status": "staff enabled"}, status=status.HTTP_200_OK)
+    
+    # in StaffViewSet
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def me(self, request):
+        staff = self.get_queryset().filter(user=request.user).first()
+        if staff is not None:
+            serializer = self.get_serializer(staff)
+            return Response(serializer.data)
+        return Response({"detail": "Staff profile not found for this user."}, status=404)
+
 
 # ----------------------------
 # Specialization CRUD
@@ -147,19 +159,53 @@ class DoctorWorkingScheduleViewSet(viewsets.ModelViewSet):
         return queryset
 
 class LeaveRequestViewSet(viewsets.ModelViewSet):
-    queryset = LeaveRequest.objects.all()
+    queryset = LeaveRequest.objects.all().order_by("-requested_at")
     serializer_class = LeaveRequestSerializer
 
     def get_permissions(self):
-        if self.action in ['create']:
+        # Allow all authenticated users to list and create
+        if self.action in ['list', 'create']:
             permission_classes = [permissions.IsAuthenticated]
         else:
             permission_classes = [permissions.IsAuthenticated, IsAdmin]
         return [p() for p in permission_classes]
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == "ADMIN":
+            return LeaveRequest.objects.all().order_by("-requested_at")
+        try:
+            staff = Staff.objects.get(user=user)
+            return LeaveRequest.objects.filter(staff=staff).order_by("-requested_at")
+        except Staff.DoesNotExist:
+            return LeaveRequest.objects.none()
+
     def perform_create(self, serializer):
         staff = Staff.objects.get(user=self.request.user)
-        serializer.save(staff=staff)
+        leave = serializer.save(staff=staff)
+        admins = User.objects.filter(role="ADMIN")
+        for admin in admins:
+            Notification.objects.create(
+                user=admin,
+                title="New Leave Request",
+                message=f"{staff.name} has submitted a new leave request."
+            )
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        previous_status = instance.status
+        response = super().update(request, *args, **kwargs)
+        instance.refresh_from_db()
+        if instance.status != previous_status:
+            status_message = "approved" if instance.status == "APPROVED" else "rejected"
+            Notification.objects.create(
+                user=instance.staff.user,
+                title="Leave Request Update",
+                message=f"Your leave request from {instance.start_date} to {instance.end_date} has been {status_message}."
+            )
+        return response
+
+
 
 class ForgotPasswordRequestViewSet(viewsets.ModelViewSet):
     queryset = ForgotPasswordRequest.objects.all()
@@ -242,3 +288,17 @@ class ChangePasswordView(APIView):
         user.set_password(new_password)
         user.save()
         return Response({"detail": "Password updated successfully."})
+    
+class NotificationViewSet(viewsets.ModelViewSet):
+    queryset = Notification.objects.all().order_by("-created_at")
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Show only notifications for the logged-in user
+        return Notification.objects.filter(user=self.request.user).order_by("-created_at")
+
+    @action(detail=False, methods=["post"])
+    def mark_all_read(self, request):
+        Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+        return Response({"message": "All notifications marked as read"})

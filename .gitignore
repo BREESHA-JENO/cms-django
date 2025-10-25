@@ -5,7 +5,4 @@ __pycache__/
 *.pyo
 *.pyd
 
-**/settings.py
-cms_backend_api/settings.py
-
 migrations/
