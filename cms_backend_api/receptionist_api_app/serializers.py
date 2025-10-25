@@ -200,26 +200,73 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
 
 class RecBillingSerializer(serializers.ModelSerializer):
-    patient_code = serializers.CharField(write_only=True, required=True)
+    patient_code = serializers.CharField(write_only=True, required=False)  # ✅ Make it optional
+    patient_name = serializers.CharField(source='patient_id.patient_name', read_only=True)
+    doctor_name = serializers.CharField(source='staff.name', read_only=True)
 
     class Meta:
         model = RecBilling
-        fields = ['rec_bill_id','patient_id','patient_code','staff','consultation_fee','billing_status','billing_created_at']
-        read_only_fields = ['rec_bill_id','billing_created_at']
+        fields = [
+            'rec_bill_id', 'patient_id', 'patient_code', 'patient_name',
+            'staff', 'doctor_name', 'consultation_fee', 
+            'billing_status', 'billing_created_at'
+        ]
+        read_only_fields = ['rec_bill_id', 'billing_created_at', 'patient_id']
+
+    def create(self, validated_data):
+        # Extract patient_code from validated data
+        patient_code = validated_data.pop('patient_code')
+        
+        # Find the patient
+        try:
+            patient = Patient.objects.get(patient_id=patient_code)
+        except Patient.DoesNotExist:
+            raise serializers.ValidationError({"patient_code": "Patient not found."})
+        
+        # Add patient to validated data
+        validated_data['patient_id'] = patient
+        
+        # Create and return the billing record
+        return super().create(validated_data)
+
+    # ✅ ADD THIS METHOD
+    def update(self, instance, validated_data):
+        # Remove patient_code if present (not needed for update)
+        validated_data.pop('patient_code', None)
+        
+        # Update only the fields that are provided
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        return instance
 
     def validate(self, attrs):
-        code = self.initial_data.get('patient_code')
-        try:
-            patient = Patient.objects.get(patient_id=code)
-        except Patient.DoesNotExist:
-            raise serializers.ValidationError("Patient not found or inactive.")
-        attrs['patient_id'] = patient
-
+        # Skip validation if this is an update operation
+        if self.instance is not None:
+            # This is an update - only validate if staff is being changed
+            if 'staff' in attrs:
+                staff = attrs.get('staff')
+                if not isinstance(staff, Staff):
+                    raise serializers.ValidationError({"staff": "Invalid staff selected."})
+                if staff.user.role != 'DOC':
+                    raise serializers.ValidationError({"staff": "Selected staff must be a Doctor."})
+            return attrs
+        
+        # This is a create operation - validate everything
         staff = attrs.get('staff')
-        if not isinstance(staff, Staff) or staff.role != 'DOC':
-            raise serializers.ValidationError("Billing staff must be a Doctor.")
-        if attrs.get('consultation_fee', 0) < 0:
-            raise serializers.ValidationError("consultation_fee cannot be negative.")
+        
+        if not isinstance(staff, Staff):
+            raise serializers.ValidationError({"staff": "Invalid staff selected."})
+        
+        if staff.user.role != 'DOC':
+            raise serializers.ValidationError({"staff": "Selected staff must be a Doctor."})
+        
+        # Validate consultation fee
+        consultation_fee = attrs.get('consultation_fee', 0)
+        if consultation_fee < 0:
+            raise serializers.ValidationError({"consultation_fee": "Consultation fee cannot be negative."})
+        
         return attrs
 
 # Add this at the end of serializers.py
@@ -229,4 +276,4 @@ class DoctorSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Staff
-        fields = ['id','staff_id', 'name', 'department', 'role', 'phone_number', 'email']
+        fields = ['id', 'staff_id', 'name', 'department', 'role', 'phone_number', 'email']

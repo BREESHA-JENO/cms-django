@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
 from admin_api_app.models import Staff
+from .serializers import DoctorSerializer
+from rest_framework.decorators import api_view, permission_classes
 
 from .models import Patient, Appointment, RecBilling
 from .serializers import (
@@ -91,7 +93,51 @@ class MyAppointmentsViewSet(viewsets.ReadOnlyModelViewSet):
         return super().get_queryset().filter(staff=staff)
 
 # Billing
-class RecBillingViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
-    queryset = RecBilling.objects.select_related('patient_id','staff').all().order_by('-billing_created_at')
+
+
+class RecBillingViewSet(viewsets.ModelViewSet):
+    """
+    Receptionists can manage billing records
+    """
+    queryset = RecBilling.objects.all()
     serializer_class = RecBillingSerializer
     permission_classes = [IsAuthenticated & IsReceptionist]
+    
+    # ✅ ADD THIS METHOD
+    @action(detail=True, methods=['patch'], url_path='status')
+    def update_status(self, request, pk=None):
+        """
+        Update billing payment status
+        """
+        billing = self.get_object()
+        new_status = request.data.get('billing_status')
+        
+        if not new_status:
+            return Response(
+                {'error': 'billing_status is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate status choice
+        valid_statuses = ['Paid', 'Unpaid', 'Partially Paid']
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        billing.billing_status = new_status
+        billing.save()
+        
+        serializer = self.get_serializer(billing)
+        return Response(serializer.data)
+
+from rest_framework.decorators import api_view, permission_classes
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_doctors_for_ae(request):
+    """Public endpoint for getting doctors list (for A&E module)"""
+    doctors = Staff.objects.filter(user__role='DOC', is_active=True).select_related('user')
+    serializer = DoctorSerializer(doctors, many=True)
+    return Response(serializer.data)
+
