@@ -55,6 +55,9 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            print(serializer.errors)
+            return Response(serializer.errors, status=400)
         serializer.is_valid(raise_exception=True)
         staff = serializer.save()
         data = serializer.data
@@ -298,7 +301,15 @@ class NotificationViewSet(viewsets.ModelViewSet):
         # Show only notifications for the logged-in user
         return Notification.objects.filter(user=self.request.user).order_by("-created_at")
 
+    # @action(detail=False, methods=["post"])
+    # def mark_all_read(self, request):
+    #     Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    #     return Response({"message": "All notifications marked as read"})
+
     @action(detail=False, methods=["post"])
     def mark_all_read(self, request):
-        Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
-        return Response({"message": "All notifications marked as read"})
+        print("User pk:", request.user.pk)
+        print("Notifications to update:", Notification.objects.filter(user=request.user, is_read=False).values_list("id", flat=True))
+        updated = Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+        print("Updated count:", updated)
+        return Response({"message": "All notifications marked as read", "updated": updated})

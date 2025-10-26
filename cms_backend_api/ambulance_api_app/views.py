@@ -32,8 +32,16 @@ class AmbulanceRequestCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsReceptionist]
 
     def perform_create(self, serializer):
-        staff = Staff.objects.get(user=self.request.user)
-        serializer.save(created_by=staff)
+        staff = Staff.objects.get(user=self.request.user)  # Receptionist creating
+        ambulance = serializer.validated_data.get('assigned_ambulance')
+        assigned_driver = None
+        if ambulance is not None:
+            assigned_driver = ambulance.driver  # FK to Staff
+        serializer.save(
+            created_by=staff,
+            assigned_driver=assigned_driver
+        )
+
 
 
 class AmbulanceRequestListView(generics.ListAPIView):
