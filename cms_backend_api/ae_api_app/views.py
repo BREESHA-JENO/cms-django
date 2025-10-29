@@ -13,6 +13,7 @@ from .serializers import (
 from receptionist_api_app.models import Patient
 from ambulance_api_app.models import Ambulance
 from Authentication.permissions import IsReceptionist
+from datetime import date
 
 
 # ==============================
@@ -143,6 +144,7 @@ def convert_temp_to_permanent(request, temp_patient_id):
         patient_phone=validated_data['patient_phone'],
         patient_blood_group=validated_data.get('patient_blood_group', ''),
         patient_address=validated_data.get('patient_address', ''),
+        patient_reg_date=date.today()
     )
 
     ae_cases = AECase.objects.filter(temp_patient=temp_patient)
@@ -156,12 +158,12 @@ def convert_temp_to_permanent(request, temp_patient_id):
     temp_patient.save()
 
     return Response({
-        'message': f'Temporary Patient {temp_patient.temp_patient_code} successfully converted to Permanent Patient {permanent_patient.patient_code}',
-        'temp_patient_code': temp_patient.temp_patient_code,
-        'permanent_patient_id': permanent_patient.patient_id,
-        'permanent_patient_code': permanent_patient.patient_code,
-        'ae_cases_transferred': ae_cases.count()
+    'message': f'Temporary Patient {temp_patient.temp_patient_code} successfully converted to Permanent Patient {permanent_patient.patient_id}',
+    'temp_patient_code': temp_patient.temp_patient_code,
+    'permanent_patient_id': permanent_patient.patient_id,
+    'ae_cases_transferred': ae_cases.count()
     }, status=status.HTTP_201_CREATED)
+
 
 
 # ==============================

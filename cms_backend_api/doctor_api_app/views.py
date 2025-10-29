@@ -1,5 +1,4 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -11,12 +10,15 @@ from labtech_api_app.models import LabTest
 from Authentication.permissions import IsDoctor
 from .permissions import IsAssignedDoctor
 from .serializers import DoctorAppointmentSerializer
-from .models import ConsultationNotes, PrescriptionMed, PrescriptionLab, PrescriptionMedDetail, PrescriptionLabDetail
+from .models import ConsultationNotes, PrescriptionMed, PrescriptionLab
 from .serializers import (
     ConsultationNotesSerializer,
     PrescriptionMedSerializer,
     PrescriptionLabSerializer,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # -------------------------
@@ -85,11 +87,7 @@ class ConsultationNotesViewSet(NoUpdateDeleteMixin, StaffFilteredQuerysetMixin, 
             
             return consultation
             
-        except Exception as e:
-            # Log the error for debugging
-            import traceback
-            print(f"[ERROR] Consultation creation failed: {str(e)}")
-            print(traceback.format_exc())
+        except Exception:
             raise
 
 
@@ -145,28 +143,34 @@ class DoctorAppointmentViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         if not hasattr(user, "staff_profile"):
             return Appointment.objects.none()
-
-        # Get consultations created TODAY by this doctor (consistent with dashboard stats)
+        # Determine today's date and appointments already consulted today by this doctor
         today = timezone.now().date()
         consulted_today_ids = list(ConsultationNotes.objects.filter(
             staff_id=user.staff_profile,
             created_at__date=today
         ).values_list('appointment_id', flat=True))
 
-        # Get ONLY SCHEDULED appointments for this doctor, excluding completed/cancelled
+        # Start with scheduled appointments assigned to this doctor
         queryset = Appointment.objects.filter(
             staff=user.staff_profile,
-            appoinment_status='Scheduled'  # Only show scheduled appointments
-        ).exclude(
-            appointment_auto_id__in=consulted_today_ids
+            appoinment_status='Scheduled'
         )
 
-        # Optional filter by date
+        # Optional filter by date (YYYY-MM-DD)
         date_param = self.request.query_params.get("date")
         if date_param:
             queryset = queryset.filter(appoinment_date=date_param)
 
-        return queryset.order_by("appoinment_date", "appoinment_time")
+            # If caller requested today's appointments, exclude those already consulted today
+            try:
+                if str(today) == str(date_param):
+                    queryset = queryset.exclude(appointment_auto_id__in=consulted_today_ids)
+            except Exception:
+                # If any parsing problems occur, fall back to the unmodified queryset
+                pass
+
+        # When no date param is provided, return all scheduled appointments (do not exclude by consulted_today_ids)
+        return queryset.order_by("appoinment_time")
 
 
 
@@ -189,49 +193,83 @@ def doctor_dashboard_stats(request):
         # Use timezone-aware date to handle timezone correctly
         today = timezone.now().date()
         
-        # Get appointment IDs that have been consulted TODAY by this doctor
-        consulted_today_ids = ConsultationNotes.objects.filter(
-            staff_id=staff,
-            created_at__date=today
-        ).values_list('appointment_id', flat=True)
-        
-        # Total appointments to be consulted (all scheduled appointments not yet consulted TODAY)
-        total_appointments_to_consult = Appointment.objects.filter(
-            staff=staff,
-            appoinment_status='Scheduled'
-        ).exclude(
-            appointment_auto_id__in=consulted_today_ids
-        ).count()
-        
-        # Today's appointments to be consulted (not yet consulted TODAY)
-        today_appointments_to_consult = Appointment.objects.filter(
+        # Compute breakdown counts for today's appointments (dynamic 'today' above)
+        # We use the dashboard semantics from the reference/attachment:
+        # - todayTotalAppointments = Scheduled + Completed (for appointment_date == today)
+        # - todayConsulted = number of appointments with status == 'Completed' (for today)
+        # - todayRemaining = number of appointments with status == 'Scheduled' (for today)
+        scheduled_count = Appointment.objects.filter(
             staff=staff,
             appoinment_date=today,
             appoinment_status='Scheduled'
-        ).exclude(
-            appointment_auto_id__in=consulted_today_ids
         ).count()
-        
-        # Consultations done today by this doctor
-        today_consultations = ConsultationNotes.objects.filter(
-            staff_id=staff,
-            created_at__date=today
-        ).count()
-        
-        # Pending appointments for today (scheduled but not consulted TODAY)
-        pending_today = Appointment.objects.filter(
+
+        completed_count = Appointment.objects.filter(
             staff=staff,
             appoinment_date=today,
-            appoinment_status='Scheduled'
-        ).exclude(
-            appointment_auto_id__in=consulted_today_ids
+            appoinment_status='Completed'
         ).count()
-        
+
+        cancelled_count = Appointment.objects.filter(
+            staff=staff,
+            appoinment_date=today,
+            appoinment_status='Cancelled'
+        ).count()
+
+        # Today's total appointments: sum of Scheduled + Completed for today
+        today_total = scheduled_count + completed_count
+
+        # For the dashboard we treat 'consulted today' as appointments marked Completed for today
+        today_consulted = completed_count
+
+        # Remaining appointments for today are those still Scheduled
+        today_remaining = scheduled_count
+
+        # Compute other status bucket from true total (for debugging)
+        total_all_today = Appointment.objects.filter(
+            staff=staff,
+            appoinment_date=today
+        ).count()
+        other_status_count = total_all_today - (scheduled_count + completed_count + cancelled_count)
+        if other_status_count < 0:
+            other_status_count = 0
+
+        # Tomorrow's total scheduled appointments (only Scheduled status)
+        from datetime import timedelta
+        tomorrow = today + timedelta(days=1)
+        tomorrow_total = Appointment.objects.filter(
+            staff=staff,
+            appoinment_date=tomorrow,
+            appoinment_status='Scheduled'
+        ).count()
+
+        # Log computed values for quick server-side verification
+        try:
+            logger.info(
+                "[doctor_dashboard_stats] staff=%s todayTotal=%s scheduled=%s completed=%s cancelled=%s other=%s todayConsulted=%s todayRemaining=%s tomorrow=%s",
+                getattr(staff, 'pk', staff),
+                today_total,
+                scheduled_count,
+                completed_count,
+                cancelled_count,
+                other_status_count,
+                today_consulted,
+                today_remaining,
+                tomorrow_total,
+            )
+        except Exception:
+            pass
+
         return Response({
-            'totalAppointmentsToConsult': total_appointments_to_consult,
-            'todayAppointmentsToConsult': today_appointments_to_consult,
-            'todayConsultationsDone': today_consultations,
-            'pendingToday': pending_today
+            'todayTotalAppointments': today_total,
+            'todayConsulted': today_consulted,
+            'todayRemaining': today_remaining,
+            'tomorrowAppointments': tomorrow_total,
+            # breakdown for debugging/consistency checks
+            'scheduledToday': scheduled_count,
+            'completedToday': completed_count,
+            'cancelledToday': cancelled_count,
+            'otherStatusToday': other_status_count,
         })
         
     except Exception as e:
@@ -278,13 +316,14 @@ def doctor_lab_tests(request):
     Read-only access to lab test list.
     """
     try:
-        tests = LabTest.objects.all().order_by('test_name')
+        # LabTest model fields are named with 'LabTestName' and 'LabTestId'
+        tests = LabTest.objects.all().order_by('LabTestName')
         data = [{
             'Id': test.Id,
-            'test_id': test.test_id,
-            'test_name': test.test_name,
-            'description': test.description,
-            'price': str(test.price)
+            'test_id': test.LabTestId,
+            'test_name': test.LabTestName,
+            'description': getattr(test, 'description', ''),
+            'price': str(getattr(test, 'Rate', '0'))
         } for test in tests]
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
@@ -309,20 +348,46 @@ def patient_consultation_history(request, patient_id):
     """
     try:
         from receptionist_api_app.models import Patient
-        print(f"[DEBUG] Looking for patient: {patient_id}")
+    # Debug prints removed
         
         
-        # Verify patient exists
+        # Verify patient exists. Support multiple incoming id formats:
+        # - patient.patient_id (string code, e.g. P001)
+        # - patient.patient_code (alternate code)
+        # - patient.patient_auto_id (numeric PK)
         patient = Patient.objects.filter(patient_id=patient_id).first()
         if not patient:
-            print(f"[DEBUG] Patient {patient_id} not found")
+            # try patient_code
+            patient = Patient.objects.filter(patient_code=patient_id).first()
+        if not patient:
+            # if passed value looks numeric, try numeric PK lookup
+            try:
+                if str(patient_id).isdigit():
+                    patient = Patient.objects.filter(patient_auto_id=int(patient_id)).first()
+            except Exception:
+                patient = None
+
+        # Fallback: if caller passed an appointment_auto_id instead of a patient id,
+        # try to resolve patient through the appointment record
+        if not patient:
+            try:
+                appt = Appointment.objects.filter(appointment_auto_id=patient_id).select_related('patient_id').first()
+                if appt:
+                    patient = appt.patient_id
+                    # Debug prints removed
+            except Exception:
+                # Debug prints removed
+                pass
+
+        if not patient:
+            # Debug prints removed
             return Response({'error': f'Patient {patient_id} not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        print(f"[DEBUG] Patient found: {patient.patient_name}")
+    # Debug prints removed
         
         # Get all appointments for this patient
         appointments = Appointment.objects.filter(patient_id=patient)
-        print(f"[DEBUG] Found {appointments.count()} appointments")
+    # Debug prints removed
         
         if appointments.count() == 0:
             return Response({
@@ -342,67 +407,92 @@ def patient_consultation_history(request, patient_id):
         month_param = request.GET.get('month')
         if month_param:
             try:
-                from datetime import datetime
                 # Parse YYYY-MM format
                 year, month = map(int, month_param.split('-'))
                 consultations_query = consultations_query.filter(
                     created_at__year=year,
                     created_at__month=month
                 )
-                print(f"[DEBUG] Filtering by month: {month_param}")
-            except (ValueError, TypeError) as e:
-                print(f"[DEBUG] Invalid month format: {month_param}, error: {e}")
+                # Debug prints removed
+            except (ValueError, TypeError):
+                # Debug prints removed
+                pass
         
         consultations = consultations_query.order_by('-created_at')
         
-        print(f"[DEBUG] Found {consultations.count()} consultations")
+    # Debug prints removed
         
         history_data = []
         for consultation in consultations:
-            print(f"[DEBUG] Processing consultation: {consultation.consultation_id}")
+            # Debug prints removed
             # Get medicine prescription (OneToOne relationship)
             med_data = []
             try:
-                if hasattr(consultation, 'prescriptions_med'):
+                # Access OneToOne reverse relation safely
+                try:
                     med_presc = consultation.prescriptions_med
-                    print(f"[DEBUG] Found medicine prescription: {med_presc.prescription_med_id}")
-                    # Get medicine details through the many-to-many relationship
+                except PrescriptionMed.DoesNotExist:
+                    med_presc = None
+
+                if med_presc:
+                    # Debug prints removed
+                    # Get medicine details through the many-to-many through model
                     from .models import PrescriptionMedDetail
-                details = PrescriptionMedDetail.objects.filter(prescription=med_presc).select_related('medicine')
-                med_data.append({
-                    'prescription_id': med_presc.prescription_med_id,
-                    'created_at': str(med_presc.created_at),
-                    'medicines': [{
-                        'medicine_id': detail.medicine.med_id,
-                        'medicine_name': detail.medicine.name,
-                        'dosage': detail.dosage,
-                        'quantity': detail.quantity,
-                        'instructions': detail.instructions or ''
-                    } for detail in details]
-                })
-            except Exception as e:
-                print(f"[DEBUG] Error loading medicine prescription: {str(e)}")
+                    details = PrescriptionMedDetail.objects.filter(prescription=med_presc).select_related('medicine')
+                    med_data.append({
+                        'prescription_id': med_presc.prescription_med_id,
+                        'created_at': str(med_presc.created_at),
+                        'medicines': [{
+                            'medicine_id': (detail.medicine.med_id if detail.medicine else None),
+                            'medicine_name': (detail.medicine.name if detail.medicine else None) or detail.custom_medicine_name,
+                            'dosage': detail.dosage,
+                            'quantity': detail.quantity,
+                            'instructions': detail.instructions or ''
+                        } for detail in details]
+                    })
+                else:
+                    # No prescription record for this consultation
+                    pass
+            except Exception:
+                # Debug prints removed
+                pass
             # Get lab test prescriptions
             
             lab_data = []
             try:
-                if hasattr(consultation, 'prescriptions_lab'):
+                try:
                     lab_presc = consultation.prescriptions_lab
-                    print(f"[DEBUG] Found lab prescription: {lab_presc.prescription_lab_id}")
-                    # Get lab test details through the many-to-many relationship
+                except PrescriptionLab.DoesNotExist:
+                    lab_presc = None
+
+                if lab_presc:
+                    # Debug prints removed
+                    from .models import PrescriptionLabDetail
                     details = PrescriptionLabDetail.objects.filter(prescription=lab_presc).select_related('lab_test')
-                    if details.exists():
-                        lab_data.append({
-                            'prescription_id': lab_presc.prescription_lab_id,
-                            'created_at': str(lab_presc.created_at),
-                            'tests': [{
-                                'test_id': detail.lab_test.test_id,
-                                'test_name': detail.lab_test.test_name,
-                                'instructions': detail.instructions or ''
-                            } for detail in details]
+                    # Include multiple key names to remain compatible with various frontend expectations
+                    lab_tests_list = []
+                    for detail in details:
+                        lab_test = detail.lab_test
+                        lab_tests_list.append({
+                            'Id': getattr(lab_test, 'Id', None),
+                            'LabTestId': getattr(lab_test, 'LabTestId', None),
+                            'test_id': getattr(lab_test, 'LabTestId', None) or None,
+                            'test_name': (getattr(lab_test, 'LabTestName', None) or detail.custom_lab_test_name),
+                            # Provide the exact field name used elsewhere in the frontend
+                            'LabTestName': getattr(lab_test, 'LabTestName', None) or detail.custom_lab_test_name,
+                            'instructions': detail.instructions or ''
                         })
-            except Exception as e:
-                print(f"[DEBUG] Error loading lab prescription: {str(e)}")
+
+                    lab_data.append({
+                        'prescription_id': lab_presc.prescription_lab_id,
+                        'created_at': str(lab_presc.created_at),
+                        'tests': lab_tests_list
+                    })
+                else:
+                    pass
+            except Exception:
+                # Debug prints removed
+                pass
             
             # Build consultation record
             history_data.append({
@@ -419,7 +509,7 @@ def patient_consultation_history(request, patient_id):
                 'lab_prescriptions': lab_data
             })
         
-        print(f"[DEBUG] Returning {len(history_data)} consultation records")
+    # Debug prints removed
         
         return Response({
             'patient_id': patient.patient_id,
@@ -430,8 +520,7 @@ def patient_consultation_history(request, patient_id):
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"[ERROR] in patient_consultation_history: {str(e)}")
-        print(error_trace)
+    # Debug prints removed
         return Response(
             {'error': str(e), 'traceback': error_trace},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
